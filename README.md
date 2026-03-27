@@ -1,6 +1,7 @@
 ## Production
 
-- Frontend URL: https://tu-frontend.vercel.app
+- Frontend URL: https://neuro-live-frontend.vercel.app/
+  
 
 # NeuroLive Frontend
 
