@@ -7,6 +7,11 @@ const SESSION_KEY_TOKEN = "nl_token";
 const SESSION_KEY_ROLE = "nl_role";
 const SESSION_KEY_NAME = "nl_name";
 
+const VALID_ROLES: UserRole[] = ["USER_PERSONAL", "PATIENT", "CAREGIVER", "DOCTOR"];
+function isValidRole(value: string | null): value is UserRole {
+  return VALID_ROLES.includes(value as UserRole);
+}
+
 type AuthUser = {
   token: string;
   role: UserRole;
@@ -28,28 +33,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Restore session from sessionStorage on page refresh
   useEffect(() => {
-    const token = sessionStorage.getItem(SESSION_KEY_TOKEN);
-    const role = sessionStorage.getItem(SESSION_KEY_ROLE) as UserRole | null;
-    const name = sessionStorage.getItem(SESSION_KEY_NAME);
+    try {
+      const token = sessionStorage.getItem(SESSION_KEY_TOKEN);
+      const role = sessionStorage.getItem(SESSION_KEY_ROLE);
+      const name = sessionStorage.getItem(SESSION_KEY_NAME);
 
-    if (token && role && name) {
-      setUser({ token, role, name });
+      if (token && isValidRole(role) && name) {
+        setUser({ token, role, name });
+      }
+    } catch {
+      // sessionStorage unavailable (e.g. private-browsing SecurityError) — start unauthenticated
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   }, []);
 
   function login(token: string, role: UserRole, name: string) {
-    sessionStorage.setItem(SESSION_KEY_TOKEN, token);
-    sessionStorage.setItem(SESSION_KEY_ROLE, role);
-    sessionStorage.setItem(SESSION_KEY_NAME, name);
+    try {
+      sessionStorage.setItem(SESSION_KEY_TOKEN, token);
+      sessionStorage.setItem(SESSION_KEY_ROLE, role);
+      sessionStorage.setItem(SESSION_KEY_NAME, name);
+    } catch {
+      // sessionStorage unavailable — session will not survive a refresh
+    }
     setUser({ token, role, name });
   }
 
   function logout() {
-    sessionStorage.removeItem(SESSION_KEY_TOKEN);
-    sessionStorage.removeItem(SESSION_KEY_ROLE);
-    sessionStorage.removeItem(SESSION_KEY_NAME);
+    try {
+      sessionStorage.removeItem(SESSION_KEY_TOKEN);
+      sessionStorage.removeItem(SESSION_KEY_ROLE);
+      sessionStorage.removeItem(SESSION_KEY_NAME);
+    } catch {
+      // ignore
+    }
     setUser(null);
   }
 
