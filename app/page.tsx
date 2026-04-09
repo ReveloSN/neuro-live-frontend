@@ -33,7 +33,7 @@ export default async function LandingPage() {
           <div className="max-w-3xl">
             <StatusBadge tone="normal">Frontend MVP</StatusBadge>
             <h1 className="mt-6 text-5xl font-semibold tracking-tight text-ink sm:text-6xl">
-              Sensory wellbeing support designed to feel calm, clear, and ready to grow.
+              NeuroLive
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-muted">
               NeuroLive is a sensory wellbeing and monitoring platform for neurodivergent
