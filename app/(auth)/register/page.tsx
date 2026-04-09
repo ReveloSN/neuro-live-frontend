@@ -1,49 +1,60 @@
 "use client";
 
 import { useState, FormEvent } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useAuth } from "@/context/AuthContext";
-import type { UserRole, LoginResponse } from "@/lib/types";
+import type { UserRole, RegisterRequest, RegisterResponse } from "@/lib/types";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "https://neurolive-backend.azurewebsites.net").replace(/\/$/, "");
 
-const ROLE_ROUTES: Record<UserRole, string> = {
-  USER_PERSONAL: "/dashboard/personal",
-  PATIENT: "/dashboard/patient",
-  CAREGIVER: "/dashboard/caregiver",
-  DOCTOR: "/dashboard/doctor",
-};
+const ROLES: { label: string; value: UserRole }[] = [
+  { label: "Paciente", value: "PATIENT" },
+  { label: "Cuidador", value: "CAREGIVER" },
+  { label: "Médico", value: "DOCTOR" },
+  { label: "Usuario Personal", value: "USER_PERSONAL" },
+];
 
 const ERROR_MESSAGES: Record<number, string> = {
-  401: "Correo o contraseña incorrectos.",
-  403: "Tu cuenta no tiene acceso. Contacta al administrador.",
-  404: "No encontramos una cuenta con ese correo.",
+  400: "Los datos ingresados no son válidos. Revisa el formulario.",
+  409: "Ya existe una cuenta con ese correo electrónico.",
   429: "Demasiados intentos. Espera un momento e intenta de nuevo.",
   500: "Error del servidor. Intenta más tarde.",
 };
 
-export default function LoginPage() {
+export default function RegisterPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const justRegistered = searchParams.get("registered") === "true";
-  const { login } = useAuth();
 
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [role, setRole] = useState<UserRole>("PATIENT");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+
+    if (password !== confirmPassword) {
+      setError("Las contraseñas no coinciden.");
+      return;
+    }
+
     setIsLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE}/auth/login`, {
+      const body: RegisterRequest = {
+        name: name.trim(),
+        email: email.trim(),
+        password,
+        role,
+      };
+
+      const res = await fetch(`${API_BASE}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), password }),
+        body: JSON.stringify(body),
       });
 
       if (!res.ok) {
@@ -52,12 +63,10 @@ export default function LoginPage() {
         return;
       }
 
-      const data: LoginResponse = await res.json();
-      const role = data.role as UserRole;
-      login(data.token, role, data.name);
+      const data: RegisterResponse = await res.json();
+      void data;
 
-      const destination = ROLE_ROUTES[role] ?? "/dashboard";
-      router.push(destination);
+      router.push("/login?registered=true");
     } catch {
       setError("No se pudo conectar con el servidor. Verifica tu conexión.");
     } finally {
@@ -65,13 +74,15 @@ export default function LoginPage() {
     }
   }
 
+  const canSubmit = name && email && password && confirmPassword && !isLoading;
+
   return (
     <div className="min-h-screen flex" style={{ backgroundColor: "#F5F0E8" }}>
-      {/* Left — login form */}
+      {/* Left — registration form */}
       <div className="flex flex-1 flex-col justify-center px-8 py-12 sm:px-12 lg:px-16 xl:px-24">
         <div className="mx-auto w-full max-w-sm">
           {/* Brand */}
-          <div className="mb-10">
+          <div className="mb-8">
             <span
               className="text-2xl font-bold tracking-tight"
               style={{ color: "#4A7FA5" }}
@@ -79,24 +90,38 @@ export default function LoginPage() {
               NeuroLive
             </span>
             <h1 className="mt-6 text-3xl font-bold text-gray-900 leading-snug">
-              Bienvenido de nuevo
+              Crear cuenta
             </h1>
             <p className="mt-2 text-sm text-gray-500">
-              Ingresa tus datos para continuar.
+              Completa tus datos para comenzar.
             </p>
           </div>
 
-          {justRegistered && (
-            <p
-              role="status"
-              className="mb-6 rounded-lg px-4 py-3 text-sm font-medium"
-              style={{ backgroundColor: "#DCFCE7", color: "#166534" }}
-            >
-              Cuenta creada con éxito. Inicia sesión para continuar.
-            </p>
-          )}
-
           <form onSubmit={handleSubmit} noValidate className="space-y-5">
+            {/* Full name */}
+            <div>
+              <label
+                htmlFor="name"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
+                Nombre completo
+              </label>
+              <input
+                id="name"
+                type="text"
+                autoComplete="name"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                disabled={isLoading}
+                maxLength={100}
+                placeholder="Tu nombre"
+                className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none transition disabled:opacity-50"
+                onFocus={(e) => (e.currentTarget.style.borderColor = "#4A7FA5")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "")}
+              />
+            </div>
+
             {/* Email */}
             <div>
               <label
@@ -123,25 +148,16 @@ export default function LoginPage() {
 
             {/* Password */}
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <label
-                  htmlFor="password"
-                  className="block text-sm font-medium text-gray-700"
-                >
-                  Contraseña
-                </label>
-                <Link
-                  href="/forgot-password"
-                  className="text-xs font-medium transition hover:opacity-75"
-                  style={{ color: "#4A7FA5" }}
-                >
-                  ¿Olvidaste tu contraseña?
-                </Link>
-              </div>
+              <label
+                htmlFor="password"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
+                Contraseña
+              </label>
               <input
                 id="password"
                 type="password"
-                autoComplete="current-password"
+                autoComplete="new-password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -153,6 +169,74 @@ export default function LoginPage() {
                 onBlur={(e) => (e.currentTarget.style.borderColor = "")}
               />
             </div>
+
+            {/* Confirm password */}
+            <div>
+              <label
+                htmlFor="confirmPassword"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
+                Confirmar contraseña
+              </label>
+              <input
+                id="confirmPassword"
+                type="password"
+                autoComplete="new-password"
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                disabled={isLoading}
+                maxLength={50}
+                placeholder="••••••••"
+                className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none transition disabled:opacity-50"
+                onFocus={(e) => (e.currentTarget.style.borderColor = "#4A7FA5")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "")}
+              />
+            </div>
+
+            {/* Role selector */}
+            <fieldset>
+              <legend className="block text-sm font-medium text-gray-700 mb-2">
+                Tipo de perfil
+              </legend>
+              <div className="grid grid-cols-2 gap-2">
+                {ROLES.map(({ label, value }) => (
+                  <label
+                    key={value}
+                    className="flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-medium cursor-pointer transition"
+                    style={{
+                      borderColor: role === value ? "#4A7FA5" : "#D1D5DB",
+                      backgroundColor: role === value ? "#EBF4FA" : "white",
+                      color: role === value ? "#4A7FA5" : "#374151",
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="role"
+                      value={value}
+                      checked={role === value}
+                      onChange={() => setRole(value)}
+                      disabled={isLoading}
+                      className="sr-only"
+                    />
+                    <span
+                      className="h-3.5 w-3.5 flex-shrink-0 rounded-full border-2 flex items-center justify-center"
+                      style={{
+                        borderColor: role === value ? "#4A7FA5" : "#9CA3AF",
+                      }}
+                    >
+                      {role === value && (
+                        <span
+                          className="h-1.5 w-1.5 rounded-full"
+                          style={{ backgroundColor: "#4A7FA5" }}
+                        />
+                      )}
+                    </span>
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
 
             {/* Error message */}
             {error && (
@@ -168,29 +252,29 @@ export default function LoginPage() {
             {/* Submit */}
             <button
               type="submit"
-              disabled={isLoading || !email || !password}
+              disabled={!canSubmit}
               className="w-full rounded-xl px-4 py-3 text-sm font-semibold text-white transition focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               style={{ backgroundColor: "#4A7FA5" }}
             >
               {isLoading ? (
                 <>
                   <Spinner />
-                  Ingresando...
+                  Creando cuenta...
                 </>
               ) : (
-                "Iniciar sesión"
+                "Crear mi cuenta"
               )}
             </button>
           </form>
 
           <p className="mt-8 text-center text-sm text-gray-500">
-            ¿No tienes cuenta?{" "}
+            ¿Ya tienes cuenta?{" "}
             <Link
-              href="/register"
+              href="/login"
               className="font-medium transition hover:opacity-75"
               style={{ color: "#4A7FA5" }}
             >
-              Regístrate gratis
+              Inicia sesión
             </Link>
           </p>
         </div>
