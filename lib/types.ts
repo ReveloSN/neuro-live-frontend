@@ -1,4 +1,4 @@
-export type UserRole = "ADMIN" | "CAREGIVER" | "PATIENT" | "SPECIALIST";
+export type UserRole = "USER_PERSONAL" | "PATIENT" | "CAREGIVER" | "DOCTOR";
 
 export type LoginRequest = {
   email: string;
