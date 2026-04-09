@@ -7,6 +7,16 @@ const SESSION_KEY_TOKEN = "nl_token";
 const SESSION_KEY_ROLE = "nl_role";
 const SESSION_KEY_NAME = "nl_name";
 
+// Middleware runs on the Edge and cannot read sessionStorage, so we mirror
+// nl_token and nl_role into session cookies (no max-age → expire with tab).
+function setSessionCookie(name: string, value: string) {
+  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; SameSite=Strict`;
+}
+
+function clearSessionCookie(name: string) {
+  document.cookie = `${name}=; path=/; max-age=0; SameSite=Strict`;
+}
+
 const VALID_ROLES: UserRole[] = ["USER_PERSONAL", "PATIENT", "CAREGIVER", "DOCTOR"];
 function isValidRole(value: string | null): value is UserRole {
   return VALID_ROLES.includes(value as UserRole);
@@ -53,6 +63,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       sessionStorage.setItem(SESSION_KEY_TOKEN, token);
       sessionStorage.setItem(SESSION_KEY_ROLE, role);
       sessionStorage.setItem(SESSION_KEY_NAME, name);
+      setSessionCookie(SESSION_KEY_TOKEN, token);
+      setSessionCookie(SESSION_KEY_ROLE, role);
     } catch {
       // sessionStorage unavailable — session will not survive a refresh
     }
@@ -64,6 +76,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       sessionStorage.removeItem(SESSION_KEY_TOKEN);
       sessionStorage.removeItem(SESSION_KEY_ROLE);
       sessionStorage.removeItem(SESSION_KEY_NAME);
+      clearSessionCookie(SESSION_KEY_TOKEN);
+      clearSessionCookie(SESSION_KEY_ROLE);
     } catch {
       // ignore
     }
