@@ -44,8 +44,8 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // /dashboard/* → require authentication
-  if (pathname.startsWith("/dashboard")) {
+  // /dashboard/* and /profile → require authentication
+  if (pathname.startsWith("/dashboard") || pathname.startsWith("/profile")) {
     if (!isAuthenticated) {
       return NextResponse.redirect(new URL("/login", request.url));
     }
@@ -56,5 +56,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/login", "/register", "/dashboard/:path*"],
+  matcher: ["/", "/login", "/register", "/dashboard/:path*", "/profile/:path*", "/profile"],
 };

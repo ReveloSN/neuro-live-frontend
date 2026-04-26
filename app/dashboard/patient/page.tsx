@@ -10,7 +10,7 @@ export default function PatientDashboardPage() {
 
   function handleLogout() {
     logout();
-    router.push("/login");
+    router.replace("/login");
   }
 
   useEffect(() => {
