@@ -1,51 +1,59 @@
 "use client";
 
-import { useState, FormEvent, Suspense } from "react";
+import { useState, FormEvent, Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
-import { useAuth } from "@/context/AuthContext";
-import type { UserRole, LoginResponse } from "@/lib/types";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "https://neurolive-backend.azurewebsites.net").replace(/\/$/, "");
 
 const ERROR_MESSAGES: Record<number, string> = {
-  401: "Correo o contraseña incorrectos.",
-  403: "Tu cuenta no tiene acceso. Contacta al administrador.",
+  400: "Los datos enviados no son válidos. Intenta de nuevo.",
   404: "No encontramos una cuenta con ese correo.",
+  410: "El código ha expirado. Solicita uno nuevo.",
   429: "Demasiados intentos. Espera un momento e intenta de nuevo.",
   500: "Error del servidor. Intenta más tarde.",
 };
 
-export default function LoginPage() {
+export default function ResetPasswordPage() {
   return (
     <Suspense>
-      <LoginContent />
+      <ResetPasswordContent />
     </Suspense>
   );
 }
 
-function LoginContent() {
+function ResetPasswordContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const justRegistered = searchParams.get("registered") === "true";
-  const passwordReset = searchParams.get("passwordReset") === "true";
-  const { login } = useAuth();
+  const email = searchParams.get("email") ?? "";
+  const code = searchParams.get("code") ?? "";
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!email || !code) {
+      router.replace("/forgot-password");
+    }
+  }, [email, code, router]);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+
+    if (newPassword !== confirmPassword) {
+      setError("Las contraseñas no coinciden.");
+      return;
+    }
+
     setIsLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE}/auth/login`, {
+      const res = await fetch(`${API_BASE}/auth/account-recovery/reset`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), password }),
+        body: JSON.stringify({ email, code, newPassword }),
       });
 
       if (!res.ok) {
@@ -54,13 +62,7 @@ function LoginContent() {
         return;
       }
 
-      const data: LoginResponse = await res.json();
-      login(data.token, data.role as UserRole, data.name);
-
-      // router.refresh() re-requests the current route from the server,
-      // giving middleware a chance to read the newly-set cookies and
-      // redirect to the correct dashboard before the client navigates.
-      router.refresh();
+      router.push("/login?passwordReset=true");
     } catch {
       setError("No se pudo conectar con el servidor. Verifica tu conexión.");
     } finally {
@@ -68,9 +70,11 @@ function LoginContent() {
     }
   }
 
+  const canSubmit = newPassword && confirmPassword && !isLoading;
+
   return (
     <div className="min-h-screen flex" style={{ backgroundColor: "#F5F0E8" }}>
-      {/* Left — login form */}
+      {/* Left — form */}
       <div className="flex flex-1 flex-col justify-center px-8 py-12 sm:px-12 lg:px-16 xl:px-24">
         <div className="mx-auto w-full max-w-sm">
           {/* Brand */}
@@ -82,82 +86,53 @@ function LoginContent() {
               NeuroLive
             </span>
             <h1 className="mt-6 text-3xl font-bold text-gray-900 leading-snug">
-              Bienvenido de nuevo
+              Nueva contraseña
             </h1>
             <p className="mt-2 text-sm text-gray-500">
-              Ingresa tus datos para continuar.
+              Elige una contraseña segura para tu cuenta.
             </p>
           </div>
 
-          {justRegistered && (
-            <p
-              role="status"
-              className="mb-6 rounded-lg px-4 py-3 text-sm font-medium"
-              style={{ backgroundColor: "#DCFCE7", color: "#166534" }}
-            >
-              Cuenta creada con éxito. Inicia sesión para continuar.
-            </p>
-          )}
-
-          {passwordReset && (
-            <p
-              role="status"
-              className="mb-6 rounded-lg px-4 py-3 text-sm font-medium"
-              style={{ backgroundColor: "#DCFCE7", color: "#166534" }}
-            >
-              Contraseña actualizada correctamente.
-            </p>
-          )}
-
           <form onSubmit={handleSubmit} noValidate className="space-y-5">
-            {/* Email */}
+            {/* New password */}
             <div>
               <label
-                htmlFor="email"
+                htmlFor="newPassword"
                 className="block text-sm font-medium text-gray-700 mb-1"
               >
-                Correo electrónico
+                Nueva contraseña
               </label>
               <input
-                id="email"
-                type="email"
-                autoComplete="email"
+                id="newPassword"
+                type="password"
+                autoComplete="new-password"
                 required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
                 disabled={isLoading}
-                maxLength={150}
-                placeholder="tu@correo.com"
+                maxLength={50}
+                placeholder="••••••••"
                 className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none transition disabled:opacity-50"
                 onFocus={(e) => (e.currentTarget.style.borderColor = "#4A7FA5")}
                 onBlur={(e) => (e.currentTarget.style.borderColor = "")}
               />
             </div>
 
-            {/* Password */}
+            {/* Confirm password */}
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <label
-                  htmlFor="password"
-                  className="block text-sm font-medium text-gray-700"
-                >
-                  Contraseña
-                </label>
-                <Link
-                  href="/forgot-password"
-                  className="text-xs font-medium transition hover:opacity-75"
-                  style={{ color: "#4A7FA5" }}
-                >
-                  ¿Olvidaste tu contraseña?
-                </Link>
-              </div>
+              <label
+                htmlFor="confirmPassword"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
+                Confirmar contraseña
+              </label>
               <input
-                id="password"
+                id="confirmPassword"
                 type="password"
-                autoComplete="current-password"
+                autoComplete="new-password"
                 required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
                 disabled={isLoading}
                 maxLength={50}
                 placeholder="••••••••"
@@ -181,31 +156,20 @@ function LoginContent() {
             {/* Submit */}
             <button
               type="submit"
-              disabled={isLoading || !email || !password}
+              disabled={!canSubmit}
               className="w-full rounded-xl px-4 py-3 text-sm font-semibold text-white transition focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               style={{ backgroundColor: "#4A7FA5" }}
             >
               {isLoading ? (
                 <>
                   <Spinner />
-                  Ingresando...
+                  Guardando...
                 </>
               ) : (
-                "Iniciar sesión"
+                "Guardar nueva contraseña"
               )}
             </button>
           </form>
-
-          <p className="mt-8 text-center text-sm text-gray-500">
-            ¿No tienes cuenta?{" "}
-            <Link
-              href="/register"
-              className="font-medium transition hover:opacity-75"
-              style={{ color: "#4A7FA5" }}
-            >
-              Regístrate gratis
-            </Link>
-          </p>
         </div>
       </div>
 
@@ -215,7 +179,6 @@ function LoginContent() {
         style={{ backgroundColor: "#D6E8F5" }}
         aria-hidden="true"
       >
-        {/* Soft background circles */}
         <div
           className="absolute -top-24 -right-24 w-96 h-96 rounded-full opacity-30"
           style={{ backgroundColor: "#4A7FA5" }}
@@ -225,7 +188,6 @@ function LoginContent() {
           style={{ backgroundColor: "#4A7FA5" }}
         />
 
-        {/* Content */}
         <div className="relative z-10 text-center max-w-xs">
           <div
             className="mx-auto mb-8 flex h-20 w-20 items-center justify-center rounded-3xl shadow-lg"
@@ -242,7 +204,6 @@ function LoginContent() {
             Acompañamos a personas neurodivergentes y sus cuidadores con datos claros y apoyo continuo.
           </p>
 
-          {/* Feature pills */}
           <div className="mt-8 flex flex-col gap-3">
             {[
               "Métricas biométricas en tiempo real",

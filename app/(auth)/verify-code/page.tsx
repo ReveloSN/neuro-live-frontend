@@ -1,40 +1,41 @@
 "use client";
 
-import { useState, FormEvent, Suspense } from "react";
+import { useState, FormEvent, Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { useAuth } from "@/context/AuthContext";
-import type { UserRole, LoginResponse } from "@/lib/types";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "https://neurolive-backend.azurewebsites.net").replace(/\/$/, "");
 
 const ERROR_MESSAGES: Record<number, string> = {
-  401: "Correo o contraseña incorrectos.",
-  403: "Tu cuenta no tiene acceso. Contacta al administrador.",
+  400: "El código ingresado no es válido.",
   404: "No encontramos una cuenta con ese correo.",
+  410: "El código ha expirado. Solicita uno nuevo.",
   429: "Demasiados intentos. Espera un momento e intenta de nuevo.",
   500: "Error del servidor. Intenta más tarde.",
 };
 
-export default function LoginPage() {
+export default function VerifyCodePage() {
   return (
     <Suspense>
-      <LoginContent />
+      <VerifyCodeContent />
     </Suspense>
   );
 }
 
-function LoginContent() {
+function VerifyCodeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const justRegistered = searchParams.get("registered") === "true";
-  const passwordReset = searchParams.get("passwordReset") === "true";
-  const { login } = useAuth();
+  const email = searchParams.get("email") ?? "";
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!email) {
+      router.replace("/forgot-password");
+    }
+  }, [email, router]);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -42,10 +43,10 @@ function LoginContent() {
     setIsLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE}/auth/login`, {
+      const res = await fetch(`${API_BASE}/auth/account-recovery/validate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), password }),
+        body: JSON.stringify({ email, code }),
       });
 
       if (!res.ok) {
@@ -54,13 +55,9 @@ function LoginContent() {
         return;
       }
 
-      const data: LoginResponse = await res.json();
-      login(data.token, data.role as UserRole, data.name);
-
-      // router.refresh() re-requests the current route from the server,
-      // giving middleware a chance to read the newly-set cookies and
-      // redirect to the correct dashboard before the client navigates.
-      router.refresh();
+      router.push(
+        `/reset-password?email=${encodeURIComponent(email)}&code=${encodeURIComponent(code)}`
+      );
     } catch {
       setError("No se pudo conectar con el servidor. Verifica tu conexión.");
     } finally {
@@ -70,7 +67,7 @@ function LoginContent() {
 
   return (
     <div className="min-h-screen flex" style={{ backgroundColor: "#F5F0E8" }}>
-      {/* Left — login form */}
+      {/* Left — form */}
       <div className="flex flex-1 flex-col justify-center px-8 py-12 sm:px-12 lg:px-16 xl:px-24">
         <div className="mx-auto w-full max-w-sm">
           {/* Brand */}
@@ -82,86 +79,35 @@ function LoginContent() {
               NeuroLive
             </span>
             <h1 className="mt-6 text-3xl font-bold text-gray-900 leading-snug">
-              Bienvenido de nuevo
+              Verificar código
             </h1>
             <p className="mt-2 text-sm text-gray-500">
-              Ingresa tus datos para continuar.
+              Ingresa el código de 6 dígitos que enviamos a tu correo.
             </p>
           </div>
 
-          {justRegistered && (
-            <p
-              role="status"
-              className="mb-6 rounded-lg px-4 py-3 text-sm font-medium"
-              style={{ backgroundColor: "#DCFCE7", color: "#166534" }}
-            >
-              Cuenta creada con éxito. Inicia sesión para continuar.
-            </p>
-          )}
-
-          {passwordReset && (
-            <p
-              role="status"
-              className="mb-6 rounded-lg px-4 py-3 text-sm font-medium"
-              style={{ backgroundColor: "#DCFCE7", color: "#166534" }}
-            >
-              Contraseña actualizada correctamente.
-            </p>
-          )}
-
           <form onSubmit={handleSubmit} noValidate className="space-y-5">
-            {/* Email */}
+            {/* Code */}
             <div>
               <label
-                htmlFor="email"
+                htmlFor="code"
                 className="block text-sm font-medium text-gray-700 mb-1"
               >
-                Correo electrónico
+                Código de verificación
               </label>
               <input
-                id="email"
-                type="email"
-                autoComplete="email"
+                id="code"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoComplete="one-time-code"
                 required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 disabled={isLoading}
-                maxLength={150}
-                placeholder="tu@correo.com"
-                className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none transition disabled:opacity-50"
-                onFocus={(e) => (e.currentTarget.style.borderColor = "#4A7FA5")}
-                onBlur={(e) => (e.currentTarget.style.borderColor = "")}
-              />
-            </div>
-
-            {/* Password */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label
-                  htmlFor="password"
-                  className="block text-sm font-medium text-gray-700"
-                >
-                  Contraseña
-                </label>
-                <Link
-                  href="/forgot-password"
-                  className="text-xs font-medium transition hover:opacity-75"
-                  style={{ color: "#4A7FA5" }}
-                >
-                  ¿Olvidaste tu contraseña?
-                </Link>
-              </div>
-              <input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={isLoading}
-                maxLength={50}
-                placeholder="••••••••"
-                className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none transition disabled:opacity-50"
+                maxLength={6}
+                placeholder="000000"
+                className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none transition disabled:opacity-50 tracking-widest text-center text-lg font-semibold"
                 onFocus={(e) => (e.currentTarget.style.borderColor = "#4A7FA5")}
                 onBlur={(e) => (e.currentTarget.style.borderColor = "")}
               />
@@ -181,29 +127,29 @@ function LoginContent() {
             {/* Submit */}
             <button
               type="submit"
-              disabled={isLoading || !email || !password}
+              disabled={isLoading || code.length !== 6}
               className="w-full rounded-xl px-4 py-3 text-sm font-semibold text-white transition focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               style={{ backgroundColor: "#4A7FA5" }}
             >
               {isLoading ? (
                 <>
                   <Spinner />
-                  Ingresando...
+                  Verificando...
                 </>
               ) : (
-                "Iniciar sesión"
+                "Verificar código"
               )}
             </button>
           </form>
 
           <p className="mt-8 text-center text-sm text-gray-500">
-            ¿No tienes cuenta?{" "}
+            ¿No recibiste el código?{" "}
             <Link
-              href="/register"
+              href="/forgot-password"
               className="font-medium transition hover:opacity-75"
               style={{ color: "#4A7FA5" }}
             >
-              Regístrate gratis
+              Solicitar de nuevo
             </Link>
           </p>
         </div>
@@ -215,7 +161,6 @@ function LoginContent() {
         style={{ backgroundColor: "#D6E8F5" }}
         aria-hidden="true"
       >
-        {/* Soft background circles */}
         <div
           className="absolute -top-24 -right-24 w-96 h-96 rounded-full opacity-30"
           style={{ backgroundColor: "#4A7FA5" }}
@@ -225,7 +170,6 @@ function LoginContent() {
           style={{ backgroundColor: "#4A7FA5" }}
         />
 
-        {/* Content */}
         <div className="relative z-10 text-center max-w-xs">
           <div
             className="mx-auto mb-8 flex h-20 w-20 items-center justify-center rounded-3xl shadow-lg"
@@ -242,7 +186,6 @@ function LoginContent() {
             Acompañamos a personas neurodivergentes y sus cuidadores con datos claros y apoyo continuo.
           </p>
 
-          {/* Feature pills */}
           <div className="mt-8 flex flex-col gap-3">
             {[
               "Métricas biométricas en tiempo real",
