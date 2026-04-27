@@ -8,13 +8,6 @@ import type { UserRole, LoginResponse } from "@/lib/types";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "https://neurolive-backend.azurewebsites.net").replace(/\/$/, "");
 
-const ROLE_ROUTES: Record<UserRole, string> = {
-  USER_PERSONAL: "/dashboard/personal",
-  PATIENT: "/dashboard/patient",
-  CAREGIVER: "/dashboard/caregiver",
-  DOCTOR: "/dashboard/doctor",
-};
-
 const ERROR_MESSAGES: Record<number, string> = {
   401: "Correo o contraseña incorrectos.",
   403: "Tu cuenta no tiene acceso. Contacta al administrador.",
@@ -61,11 +54,12 @@ function LoginContent() {
       }
 
       const data: LoginResponse = await res.json();
-      const role = data.role as UserRole;
-      login(data.token, role, data.name);
+      login(data.token, data.role as UserRole, data.name);
 
-      const destination = ROLE_ROUTES[role] ?? "/dashboard";
-      router.push(destination);
+      // router.refresh() re-requests the current route from the server,
+      // giving middleware a chance to read the newly-set cookies and
+      // redirect to the correct dashboard before the client navigates.
+      router.refresh();
     } catch {
       setError("No se pudo conectar con el servidor. Verifica tu conexión.");
     } finally {
