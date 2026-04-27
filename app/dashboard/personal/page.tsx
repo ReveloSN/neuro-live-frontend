@@ -3,6 +3,7 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import CalmMode from "@/components/CalmMode";
 
 // ---------------------------------------------------------------------------
 // PLACEHOLDER DATA — replace with real API calls when backend is ready
@@ -79,6 +80,7 @@ export default function PersonalDashboardPage() {
   const [sessionTitle, setSessionTitle] = useState("");
   const [sessionText, setSessionText] = useState("");
   const [sessionSeconds, setSessionSeconds] = useState(0); // PLACEHOLDER: session seconds synced with API
+  const [calmModeActive, setCalmModeActive] = useState(false);
 
   function handleLogout() {
     logout();
@@ -113,6 +115,8 @@ export default function PersonalDashboardPage() {
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: "#F5F0E8" }}>
+      {calmModeActive && <CalmMode onExit={() => setCalmModeActive(false)} />}
+
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header
         className="sticky top-0 z-10 flex items-center justify-between gap-4 px-6 py-3 shadow-sm"
@@ -374,8 +378,9 @@ export default function PersonalDashboardPage() {
             </div>
           </div>
 
-          {/* Activar Modo Calma — PLACEHOLDER: triggers calm mode API endpoint */}
+          {/* Activar Modo Calma */}
           <button
+            onClick={() => setCalmModeActive(true)}
             className="w-full rounded-xl px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2"
             style={{ backgroundColor: "#4A7FA5" }}
           >
