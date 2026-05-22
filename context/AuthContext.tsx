@@ -7,36 +7,14 @@ const SESSION_KEY_TOKEN = "nl_token";
 const SESSION_KEY_ROLE = "nl_role";
 const SESSION_KEY_NAME = "nl_name";
 
-// Middleware runs on the Edge and cannot read sessionStorage, so keep the
-// browser session cookies and client auth state in sync.
+// Middleware runs on the Edge and cannot read sessionStorage. The tab storage
+// is the source of truth; cookies only let middleware route the active tab.
 function setSessionCookie(name: string, value: string) {
   document.cookie = `${name}=${encodeURIComponent(value)}; path=/; SameSite=Strict`;
 }
 
 function clearSessionCookie(name: string) {
   document.cookie = `${name}=; path=/; max-age=0; SameSite=Strict`;
-}
-
-function getSessionCookie(name: string) {
-  if (typeof document === "undefined") {
-    return null;
-  }
-
-  const cookie = document.cookie
-    .split("; ")
-    .find((entry) => entry.startsWith(`${name}=`));
-
-  if (!cookie) {
-    return null;
-  }
-
-  const value = cookie.slice(name.length + 1);
-
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
 }
 
 function readSessionStorage(name: string) {
@@ -87,26 +65,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Restore from tab storage first, then cookies used by middleware.
+  // Restore only from tab storage. If it is missing, clear stale middleware cookies
+  // so protected routes can redirect to /login instead of looping on a loader.
   useEffect(() => {
-    const token =
-      readSessionStorage(SESSION_KEY_TOKEN) ?? getSessionCookie(SESSION_KEY_TOKEN);
-    const role =
-      readSessionStorage(SESSION_KEY_ROLE) ?? getSessionCookie(SESSION_KEY_ROLE);
-    const name =
-      readSessionStorage(SESSION_KEY_NAME) ?? getSessionCookie(SESSION_KEY_NAME);
+    const token = readSessionStorage(SESSION_KEY_TOKEN);
+    const role = readSessionStorage(SESSION_KEY_ROLE);
+    const name = readSessionStorage(SESSION_KEY_NAME);
 
-    if (token && isValidRole(role)) {
-      const resolvedName = name?.trim() ? name : "Usuario";
-
-      writeSessionStorage(SESSION_KEY_TOKEN, token);
-      writeSessionStorage(SESSION_KEY_ROLE, role);
-      writeSessionStorage(SESSION_KEY_NAME, resolvedName);
+    if (token && isValidRole(role) && name) {
       setSessionCookie(SESSION_KEY_TOKEN, token);
       setSessionCookie(SESSION_KEY_ROLE, role);
-      setSessionCookie(SESSION_KEY_NAME, resolvedName);
+      setSessionCookie(SESSION_KEY_NAME, name);
 
-      setUser({ token, role, name: resolvedName });
+      setUser({ token, role, name });
+    } else {
+      clearSessionCookie(SESSION_KEY_TOKEN);
+      clearSessionCookie(SESSION_KEY_ROLE);
+      clearSessionCookie(SESSION_KEY_NAME);
     }
 
     setLoading(false);
