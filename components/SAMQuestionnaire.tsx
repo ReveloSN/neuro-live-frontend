@@ -9,7 +9,8 @@ interface SAMQuestionnaireProps {
 
 type Step = "intro" | 1 | 2 | 3;
 
-// ── Flow cloud SVG base shape helpers ────────────────────────────────────────
+// ── Flow cloud SVG base shape ─────────────────────────────────────────────────
+// All paths use a fixed 100×100 viewBox; the size prop sets rendered px dimensions.
 
 function FlowCloud({
   size = 64,
@@ -20,261 +21,77 @@ function FlowCloud({
   children?: React.ReactNode;
   style?: React.CSSProperties;
 }) {
-  const s = size;
-  const cx = s / 2;
-  const cy = s * 0.56;
-  const r1 = s * 0.22;
-  const r2 = s * 0.17;
-  const r3 = s * 0.19;
-  const r4 = s * 0.16;
-  const r5 = s * 0.14;
-
   return (
     <svg
-      viewBox={`0 0 ${s} ${s}`}
-      width={s}
-      height={s}
+      viewBox="0 0 100 100"
+      width={size}
+      height={size}
       style={style}
       aria-hidden="true"
     >
-      {/* Cloud bumps */}
-      <circle cx={cx} cy={cy - r1 * 0.55} r={r1} fill="white" stroke="#2d5a7a" strokeWidth={s * 0.025} />
-      <circle cx={cx - r1 * 0.88} cy={cy} r={r2} fill="white" stroke="#2d5a7a" strokeWidth={s * 0.025} />
-      <circle cx={cx + r1 * 0.88} cy={cy} r={r3} fill="white" stroke="#2d5a7a" strokeWidth={s * 0.025} />
-      <circle cx={cx - r1 * 0.35} cy={cy - r1 * 0.95} r={r4} fill="white" stroke="#2d5a7a" strokeWidth={s * 0.025} />
-      <circle cx={cx + r1 * 0.35} cy={cy - r1 * 0.95} r={r5} fill="white" stroke="#2d5a7a" strokeWidth={s * 0.025} />
-      {/* Cloud base ellipse to fill bottom gaps */}
-      <ellipse cx={cx} cy={cy + r1 * 0.1} rx={r1 * 1.55} ry={r1 * 0.75} fill="white" stroke="#2d5a7a" strokeWidth={s * 0.025} />
+      {/* Cloud silhouette — smooth cubic bezier with 3 top bumps and flat bottom */}
+      <path
+        d="M 20,72 C 8,72 6,60 12,54 C 6,46 10,34 22,34 C 18,20 32,14 44,20 C 46,6 62,6 66,20 C 76,12 86,18 86,30 C 94,32 96,46 90,54 C 94,64 88,72 80,72 Z"
+        fill="#FFFFFF"
+        stroke="#2d5a7a"
+        strokeWidth="2"
+        strokeLinejoin="round"
+        style={{ filter: "drop-shadow(0 2px 3px rgba(45,90,122,0.18))" }}
+      />
       {/* Green accent dot */}
-      <circle cx={cx + r1 * 1.1} cy={cy - r1 * 0.7} r={s * 0.045} fill="#4ADE80" />
-      {/* Children (expressions) rendered on top */}
+      <circle cx="57" cy="57" r="3.5" fill="#4ADE80" />
       {children}
     </svg>
   );
 }
 
-// ── Expression layers per variant ────────────────────────────────────────────
+// ── Expression helpers ────────────────────────────────────────────────────────
 
-function Eyes({ s, open = true }: { s: number; open?: boolean }) {
-  const cx = s / 2;
-  const cy = s * 0.56;
-  const r1 = s * 0.22;
-  const ey = cy - r1 * 0.08;
-  const ex = r1 * 0.38;
+function Eyes({ open = true }: { open?: boolean }) {
   if (!open) {
     return (
       <>
-        <path d={`M${cx - ex - r1 * 0.12},${ey} Q${cx - ex},${ey - r1 * 0.18} ${cx - ex + r1 * 0.12},${ey}`} fill="none" stroke="#2d5a7a" strokeWidth={s * 0.03} strokeLinecap="round" />
-        <path d={`M${cx + ex - r1 * 0.12},${ey} Q${cx + ex},${ey - r1 * 0.18} ${cx + ex + r1 * 0.12},${ey}`} fill="none" stroke="#2d5a7a" strokeWidth={s * 0.03} strokeLinecap="round" />
+        <path d="M 34,48 Q 38,43 42,48" fill="none" stroke="#2d5a7a" strokeWidth="2.5" strokeLinecap="round" />
+        <path d="M 58,48 Q 62,43 66,48" fill="none" stroke="#2d5a7a" strokeWidth="2.5" strokeLinecap="round" />
       </>
     );
   }
   return (
     <>
-      <circle cx={cx - ex} cy={ey} r={r1 * 0.11} fill="#2d5a7a" />
-      <circle cx={cx + ex} cy={ey} r={r1 * 0.11} fill="#2d5a7a" />
+      <circle cx="38" cy="48" r="3.5" fill="#2d5a7a" />
+      <circle cx="62" cy="48" r="3.5" fill="#2d5a7a" />
     </>
   );
 }
 
-function Mouth({ s, type }: { s: number; type: "very-sad" | "sad" | "neutral" | "happy" | "very-happy" }) {
-  const cx = s / 2;
-  const cy = s * 0.56;
-  const r1 = s * 0.22;
-  const my = cy + r1 * 0.38;
-  const mx = r1 * 0.38;
-
+function Mouth({ type }: { type: "very-sad" | "sad" | "neutral" | "happy" | "very-happy" }) {
   if (type === "very-sad") {
-    return <path d={`M${cx - mx},${my + r1 * 0.15} Q${cx},${my - r1 * 0.28} ${cx + mx},${my + r1 * 0.15}`} fill="none" stroke="#2d5a7a" strokeWidth={s * 0.03} strokeLinecap="round" />;
+    return <path d="M 40,65 Q 50,56 60,65" fill="none" stroke="#2d5a7a" strokeWidth="2.5" strokeLinecap="round" />;
   }
   if (type === "sad") {
-    return <path d={`M${cx - mx},${my + r1 * 0.06} Q${cx},${my - r1 * 0.12} ${cx + mx},${my + r1 * 0.06}`} fill="none" stroke="#2d5a7a" strokeWidth={s * 0.03} strokeLinecap="round" />;
+    return <path d="M 40,63 Q 50,57 60,63" fill="none" stroke="#2d5a7a" strokeWidth="2.5" strokeLinecap="round" />;
   }
   if (type === "neutral") {
-    return <line x1={cx - mx} y1={my} x2={cx + mx} y2={my} stroke="#2d5a7a" strokeWidth={s * 0.03} strokeLinecap="round" />;
+    return <line x1="40" y1="62" x2="60" y2="62" stroke="#2d5a7a" strokeWidth="2.5" strokeLinecap="round" />;
   }
   if (type === "happy") {
-    return <path d={`M${cx - mx},${my - r1 * 0.06} Q${cx},${my + r1 * 0.18} ${cx + mx},${my - r1 * 0.06}`} fill="none" stroke="#2d5a7a" strokeWidth={s * 0.03} strokeLinecap="round" />;
+    return <path d="M 40,60 Q 50,68 60,60" fill="none" stroke="#2d5a7a" strokeWidth="2.5" strokeLinecap="round" />;
   }
-  // very-happy
-  return <path d={`M${cx - mx},${my - r1 * 0.08} Q${cx},${my + r1 * 0.28} ${cx + mx},${my - r1 * 0.08}`} fill="none" stroke="#2d5a7a" strokeWidth={s * 0.03} strokeLinecap="round" />;
-}
-
-// ── Valence variants ──────────────────────────────────────────────────────────
-
-function FlowVerySad({ size = 64 }: { size?: number }) {
-  const s = size;
-  const cx = s / 2;
-  const cy = s * 0.56;
-  const r1 = s * 0.22;
-  return (
-    <FlowCloud size={s}>
-      <Eyes s={s} />
-      <Mouth s={s} type="very-sad" />
-      {/* Tear drops */}
-      <ellipse cx={cx - r1 * 0.35} cy={cy + r1 * 0.28} rx={s * 0.028} ry={s * 0.05} fill="#93C5FD" />
-      <ellipse cx={cx + r1 * 0.42} cy={cy + r1 * 0.38} rx={s * 0.028} ry={s * 0.05} fill="#93C5FD" />
-    </FlowCloud>
-  );
-}
-
-function FlowSad({ size = 64 }: { size?: number }) {
-  const s = size;
-  return (
-    <FlowCloud size={s}>
-      <Eyes s={s} />
-      <Mouth s={s} type="sad" />
-    </FlowCloud>
-  );
-}
-
-function FlowNeutral({ size = 64 }: { size?: number }) {
-  const s = size;
-  return (
-    <FlowCloud size={s}>
-      <Eyes s={s} />
-      <Mouth s={s} type="neutral" />
-    </FlowCloud>
-  );
-}
-
-function FlowHappy({ size = 64 }: { size?: number }) {
-  const s = size;
-  return (
-    <FlowCloud size={s}>
-      <Eyes s={s} />
-      <Mouth s={s} type="happy" />
-    </FlowCloud>
-  );
-}
-
-function FlowVeryHappy({ size = 64 }: { size?: number }) {
-  const s = size;
-  const cx = s / 2;
-  const r1 = s * 0.22;
-  return (
-    <FlowCloud size={s}>
-      <Eyes s={s} />
-      <Mouth s={s} type="very-happy" />
-      {/* Stars */}
-      <text x={cx - r1 * 1.55} y={s * 0.22} fontSize={s * 0.13} fill="#FBBF24" textAnchor="middle">★</text>
-      <text x={cx + r1 * 1.6} y={s * 0.28} fontSize={s * 0.1} fill="#FBBF24" textAnchor="middle">★</text>
-      <text x={cx} y={s * 0.1} fontSize={s * 0.09} fill="#FBBF24" textAnchor="middle">★</text>
-    </FlowCloud>
-  );
-}
-
-// ── Arousal variants ──────────────────────────────────────────────────────────
-
-function FlowAsleep({ size = 64 }: { size?: number }) {
-  const s = size;
-  const cx = s / 2;
-  return (
-    <FlowCloud size={s}>
-      <Eyes s={s} open={false} />
-      <Mouth s={s} type="neutral" />
-      {/* Zzz */}
-      <text x={cx + s * 0.28} y={s * 0.18} fontSize={s * 0.12} fill="#94A3B8" fontWeight="bold">z</text>
-      <text x={cx + s * 0.36} y={s * 0.1} fontSize={s * 0.1} fill="#94A3B8" fontWeight="bold">z</text>
-      <text x={cx + s * 0.43} y={s * 0.04} fontSize={s * 0.08} fill="#94A3B8" fontWeight="bold">z</text>
-    </FlowCloud>
-  );
-}
-
-function FlowCalm({ size = 64 }: { size?: number }) {
-  const s = size;
-  const cx = s / 2;
-  return (
-    <FlowCloud size={s}>
-      <Eyes s={s} />
-      <Mouth s={s} type="neutral" />
-      {/* Slow wave below */}
-      <path
-        d={`M${cx - s * 0.28},${s * 0.88} Q${cx - s * 0.14},${s * 0.82} ${cx},${s * 0.88} Q${cx + s * 0.14},${s * 0.94} ${cx + s * 0.28},${s * 0.88}`}
-        fill="none"
-        stroke="#93C5FD"
-        strokeWidth={s * 0.03}
-        strokeLinecap="round"
-      />
-    </FlowCloud>
-  );
-}
-
-function FlowActive({ size = 64 }: { size?: number }) {
-  const s = size;
-  const cx = s / 2;
-  const cy = s * 0.56;
-  const r1 = s * 0.22;
-  return (
-    <FlowCloud size={s}>
-      <Eyes s={s} />
-      <Mouth s={s} type="happy" />
-      {/* Small lightning bolts */}
-      <path d={`M${cx - r1 * 1.5},${cy - r1 * 0.3} l${s * 0.06},-${s * 0.08} l-${s * 0.03},0 l${s * 0.06},-${s * 0.07}`} fill="none" stroke="#FBBF24" strokeWidth={s * 0.03} strokeLinecap="round" strokeLinejoin="round" />
-      <path d={`M${cx + r1 * 1.3},${cy - r1 * 0.4} l${s * 0.06},-${s * 0.08} l-${s * 0.03},0 l${s * 0.06},-${s * 0.07}`} fill="none" stroke="#FBBF24" strokeWidth={s * 0.03} strokeLinecap="round" strokeLinejoin="round" />
-    </FlowCloud>
-  );
-}
-
-function FlowVeryActive({ size = 64 }: { size?: number }) {
-  const s = size;
-  const cx = s / 2;
-  const cy = s * 0.56;
-  const r1 = s * 0.22;
-  return (
-    <FlowCloud size={s}>
-      <Eyes s={s} />
-      <Mouth s={s} type="very-happy" />
-      {/* Large lightning bolts */}
-      <path d={`M${cx - r1 * 1.65},${cy - r1 * 0.1} l${s * 0.09},-${s * 0.14} l-${s * 0.04},0 l${s * 0.09},-${s * 0.12}`} fill="none" stroke="#F59E0B" strokeWidth={s * 0.035} strokeLinecap="round" strokeLinejoin="round" />
-      <path d={`M${cx + r1 * 1.38},${cy - r1 * 0.2} l${s * 0.09},-${s * 0.14} l-${s * 0.04},0 l${s * 0.09},-${s * 0.12}`} fill="none" stroke="#F59E0B" strokeWidth={s * 0.035} strokeLinecap="round" strokeLinejoin="round" />
-      {/* Vibration lines */}
-      <line x1={cx - r1 * 1.85} y1={cy + r1 * 0.15} x2={cx - r1 * 2.1} y2={cy + r1 * 0.15} stroke="#FDE68A" strokeWidth={s * 0.025} strokeLinecap="round" />
-      <line x1={cx + r1 * 1.6} y1={cy + r1 * 0.15} x2={cx + r1 * 1.85} y2={cy + r1 * 0.15} stroke="#FDE68A" strokeWidth={s * 0.025} strokeLinecap="round" />
-    </FlowCloud>
-  );
-}
-
-// ── Dominance variants (size progression) ────────────────────────────────────
-
-function FlowDominance({ size = 64, cape = false }: { size?: number; cape?: boolean }) {
-  const s = size;
-  const cx = s / 2;
-  const cy = s * 0.56;
-  const r1 = s * 0.22;
-  return (
-    <FlowCloud size={s}>
-      <Eyes s={s} />
-      <Mouth s={s} type={size > 55 ? "very-happy" : size > 40 ? "happy" : "neutral"} />
-      {cape && (
-        <path
-          d={`M${cx - r1 * 0.6},${cy + r1 * 0.55} Q${cx},${cy + r1 * 1.2} ${cx + r1 * 0.6},${cy + r1 * 0.55} Q${cx + r1 * 0.1},${cy + r1 * 0.85} ${cx - r1 * 0.1},${cy + r1 * 0.85} Z`}
-          fill="#EF4444"
-          stroke="#991B1B"
-          strokeWidth={s * 0.02}
-        />
-      )}
-    </FlowCloud>
-  );
+  return <path d="M 38,59 Q 50,70 62,59" fill="none" stroke="#2d5a7a" strokeWidth="2.5" strokeLinecap="round" />;
 }
 
 // ── Intro waving Flow ─────────────────────────────────────────────────────────
 
 function FlowWaving({ size = 80 }: { size?: number }) {
-  const s = size;
-  const cx = s / 2;
-  const cy = s * 0.56;
-  const r1 = s * 0.22;
   return (
-    <FlowCloud size={s}>
-      <Eyes s={s} />
-      <Mouth s={s} type="happy" />
-      {/* Waving arm */}
+    <FlowCloud size={size}>
+      <Eyes />
+      <Mouth type="happy" />
       <path
-        d={`M${cx + r1 * 1.3},${cy} Q${cx + r1 * 1.9},${cy - r1 * 0.5} ${cx + r1 * 1.7},${cy - r1 * 1.1}`}
+        d="M 79,56 Q 92,45 87,32"
         fill="none"
         stroke="#2d5a7a"
-        strokeWidth={s * 0.04}
+        strokeWidth="4"
         strokeLinecap="round"
       />
     </FlowCloud>
@@ -284,28 +101,27 @@ function FlowWaving({ size = 80 }: { size?: number }) {
 // ── Step data ─────────────────────────────────────────────────────────────────
 
 const VALENCE_OPTIONS = [
-  { value: 1, label: "Muy triste",   node: (s: number) => <FlowVerySad size={s} /> },
-  { value: 2, label: "Triste",       node: (s: number) => <FlowSad size={s} /> },
-  { value: 3, label: "Neutral",      node: (s: number) => <FlowNeutral size={s} /> },
-  { value: 4, label: "Contento",     node: (s: number) => <FlowHappy size={s} /> },
-  { value: 5, label: "Muy contento", node: (s: number) => <FlowVeryHappy size={s} /> },
+  { value: 1, label: "Muy triste",   emoji: "😢" },
+  { value: 2, label: "Triste",       emoji: "😕" },
+  { value: 3, label: "Neutral",      emoji: "😐" },
+  { value: 4, label: "Contento",     emoji: "🙂" },
+  { value: 5, label: "Muy contento", emoji: "😄" },
 ];
 
 const AROUSAL_OPTIONS = [
-  { value: 1, label: "Dormido",         node: (s: number) => <FlowAsleep size={s} /> },
-  { value: 2, label: "Tranquilo",       node: (s: number) => <FlowCalm size={s} /> },
-  { value: 3, label: "Normal",          node: (s: number) => <FlowNeutral size={s} /> },
-  { value: 4, label: "Activo",          node: (s: number) => <FlowActive size={s} /> },
-  { value: 5, label: "Muy activo",      node: (s: number) => <FlowVeryActive size={s} /> },
+  { value: 1, label: "Sin energía", emoji: "😴" },
+  { value: 2, label: "Calmado",     emoji: "😌" },
+  { value: 3, label: "Neutral",     emoji: "😐" },
+  { value: 4, label: "Activo",      emoji: "⚡" },
+  { value: 5, label: "Muy activo",  emoji: "🔥" },
 ];
 
-const DOMINANCE_SIZES = [28, 38, 52, 62, 72];
 const DOMINANCE_OPTIONS = [
-  { value: 1, label: "Sin control",      size: DOMINANCE_SIZES[0], cape: false },
-  { value: 2, label: "Poco control",     size: DOMINANCE_SIZES[1], cape: false },
-  { value: 3, label: "Normal",           size: DOMINANCE_SIZES[2], cape: false },
-  { value: 4, label: "Con control",      size: DOMINANCE_SIZES[3], cape: false },
-  { value: 5, label: "Total control",    size: DOMINANCE_SIZES[4], cape: true  },
+  { value: 1, label: "Sin control",   emoji: "😰" },
+  { value: 2, label: "Poco control",  emoji: "😟" },
+  { value: 3, label: "Normal",        emoji: "😐" },
+  { value: 4, label: "Con control",   emoji: "💪" },
+  { value: 5, label: "En paz",        emoji: "🧘" },
 ];
 
 const STEP_CONFIG = {
@@ -426,9 +242,7 @@ export default function SAMQuestionnaire({ onComplete, onSkip }: SAMQuestionnair
 function IntroStep({ onNext, onSkip }: { onNext: () => void; onSkip: () => void }) {
   return (
     <div style={{ textAlign: "center" }}>
-      <div style={{ display: "inline-block", animation: "samWave 1.4s ease-in-out infinite", transformOrigin: "70% 80%" }}>
-        <FlowWaving size={88} />
-      </div>
+      <div style={{ fontSize: "72px", lineHeight: 1 }}>💙</div>
       <h2 style={{ marginTop: "16px", fontSize: "22px", fontWeight: 700, color: "#1e3a4f", letterSpacing: "-0.01em" }}>
         ¿Cómo te sientes ahora?
       </h2>
@@ -503,8 +317,10 @@ function QuestionStep({
   const selected = step === 1 ? valence : step === 2 ? arousal : dominance;
   const setSelected = step === 1 ? setValence : step === 2 ? setArousal : setDominance;
 
-  const options = step === 1 ? VALENCE_OPTIONS : step === 2 ? AROUSAL_OPTIONS : null;
-  const domOptions = step === 3 ? DOMINANCE_OPTIONS : null;
+  const options =
+    step === 1 ? VALENCE_OPTIONS :
+    step === 2 ? AROUSAL_OPTIONS :
+    DOMINANCE_OPTIONS;
 
   const isLastStep = step === 3;
 
@@ -541,27 +357,14 @@ function QuestionStep({
 
       {/* Options row */}
       <div style={{ display: "flex", gap: "8px", justifyContent: "center", flexWrap: "nowrap" }}>
-        {options && options.map((opt) => (
+        {options.map((opt) => (
           <OptionCard
             key={opt.value}
             label={opt.label}
             selected={selected === opt.value}
             onClick={() => setSelected(opt.value)}
           >
-            {opt.node(54)}
-          </OptionCard>
-        ))}
-        {domOptions && domOptions.map((opt) => (
-          <OptionCard
-            key={opt.value}
-            label={opt.label}
-            selected={selected === opt.value}
-            onClick={() => setSelected(opt.value)}
-            minHeight={90}
-          >
-            <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "center", height: "78px" }}>
-              <FlowDominance size={opt.size} cape={opt.cape} />
-            </div>
+            <span style={{ fontSize: "48px", lineHeight: 1 }}>{opt.emoji}</span>
           </OptionCard>
         ))}
       </div>
@@ -617,13 +420,11 @@ function OptionCard({
   label,
   selected,
   onClick,
-  minHeight = 80,
 }: {
   children: React.ReactNode;
   label: string;
   selected: boolean;
   onClick: () => void;
-  minHeight?: number;
 }) {
   return (
     <button
@@ -631,18 +432,17 @@ function OptionCard({
       className="sam-card-hover"
       style={{
         flex: "1 1 0",
-        minWidth: 0,
+        minWidth: "90px",
         border: selected ? "2px solid #4A7FA5" : "2px solid #E2E8F0",
         borderRadius: "12px",
         backgroundColor: selected ? "#DBEAFE" : "#ffffff",
-        padding: "10px 4px 8px",
+        padding: "12px 4px 10px",
         cursor: "pointer",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        gap: "6px",
+        gap: "8px",
         transition: "border-color 0.15s, background-color 0.15s, transform 0.15s",
-        minHeight,
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1 }}>
