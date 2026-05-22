@@ -1,29 +1,97 @@
 "use client";
 
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, EditorContent, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import Link from "@tiptap/extension-link";
 import Image from "@tiptap/extension-image";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
+interface Session {
+  id: string;
+  title: string;
+  content: object;
+  savedAt: string;
+}
+
 interface WorkspaceEditorProps {
   userId: string;
 }
 
+const MAX_SESSIONS = 10;
+
+function ResizableImageView({ node }: NodeViewProps) {
+  return (
+    <NodeViewWrapper as="span" style={{ display: "inline-block" }}>
+      <span
+        contentEditable={false}
+        style={{
+          display: "inline-block",
+          resize: "both",
+          overflow: "hidden",
+          maxWidth: "100%",
+          minWidth: "50px",
+          minHeight: "50px",
+        }}
+      >
+        <img
+          src={node.attrs.src as string}
+          alt={(node.attrs.alt as string) || ""}
+          title={(node.attrs.title as string) || ""}
+          style={{
+            width: "100%",
+            height: "100%",
+            display: "block",
+            objectFit: "contain",
+            borderRadius: "0.5rem",
+            margin: 0,
+          }}
+        />
+      </span>
+    </NodeViewWrapper>
+  );
+}
+
+const ResizableImage = Image.extend({
+  inline: true,
+  group: "inline",
+  addNodeView() {
+    return ReactNodeViewRenderer(ResizableImageView);
+  },
+});
+
 export default function WorkspaceEditor({ userId }: WorkspaceEditorProps) {
-  const storageKey = `nl_session_${userId}`;
+  const storageKey = `nl_sessions_${userId}`;
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [sessionTitle, setSessionTitle] = useState("");
   const [wordCount, setWordCount] = useState(0);
   const [showSaved, setShowSaved] = useState(false);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function loadSessions(): Session[] {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return [];
+      return JSON.parse(raw) as Session[];
+    } catch {
+      return [];
+    }
+  }
+
+  function persistSessions(updated: Session[]) {
+    localStorage.setItem(storageKey, JSON.stringify(updated));
+    setSessions(updated);
+  }
 
   const editor = useEditor({
     extensions: [
       StarterKit,
       Underline,
       Link.configure({ openOnClick: false }),
-      Image,
+      ResizableImage,
     ],
     content: "",
     editorProps: {
@@ -34,30 +102,58 @@ export default function WorkspaceEditor({ userId }: WorkspaceEditorProps) {
     onUpdate: ({ editor }) => {
       const text = editor.getText().trim();
       setWordCount(text === "" ? 0 : text.split(/\s+/).filter(Boolean).length);
+      setCanUndo(editor.can().undo());
+      setCanRedo(editor.can().redo());
+    },
+    onTransaction: ({ editor }) => {
+      setCanUndo(editor.can().undo());
+      setCanRedo(editor.can().redo());
     },
   });
 
   useEffect(() => {
     if (!editor) return;
-    try {
-      const saved = localStorage.getItem(storageKey);
-      if (!saved) return;
-      const { title, content } = JSON.parse(saved);
-      if (title) setSessionTitle(title);
-      if (content) {
-        editor.commands.setContent(content);
-        const text = editor.getText().trim();
-        setWordCount(text === "" ? 0 : text.split(/\s+/).filter(Boolean).length);
-      }
-    } catch {}
+    const loaded = loadSessions();
+    setSessions(loaded);
+    if (loaded.length > 0) {
+      const latest = loaded[0];
+      setCurrentSessionId(latest.id);
+      setSessionTitle(latest.title);
+      editor.commands.setContent(latest.content);
+      const text = editor.getText().trim();
+      setWordCount(text === "" ? 0 : text.split(/\s+/).filter(Boolean).length);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, storageKey]);
 
   function handleSave() {
     if (!editor) return;
-    localStorage.setItem(storageKey, JSON.stringify({
-      title: sessionTitle,
-      content: editor.getJSON(),
-    }));
+    const content = editor.getJSON();
+    const now = new Date().toISOString();
+    let updated: Session[];
+
+    if (currentSessionId) {
+      updated = sessions.map((s) =>
+        s.id === currentSessionId
+          ? { ...s, title: sessionTitle || "Sin título", content, savedAt: now }
+          : s
+      );
+    } else {
+      const newSession: Session = {
+        id: crypto.randomUUID(),
+        title: sessionTitle || "Sin título",
+        content,
+        savedAt: now,
+      };
+      updated = [newSession, ...sessions];
+      setCurrentSessionId(newSession.id);
+    }
+
+    updated = updated
+      .sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime())
+      .slice(0, MAX_SESSIONS);
+
+    persistSessions(updated);
     setShowSaved(true);
     setTimeout(() => setShowSaved(false), 2000);
   }
@@ -65,8 +161,29 @@ export default function WorkspaceEditor({ userId }: WorkspaceEditorProps) {
   function handleNewSession() {
     if (!window.confirm("¿Iniciar una nueva sesión? El contenido actual no guardado se perderá.")) return;
     setSessionTitle("");
+    setCurrentSessionId(null);
     editor?.commands.clearContent();
     setWordCount(0);
+  }
+
+  function handleOpenSession(session: Session) {
+    if (!editor) return;
+    setCurrentSessionId(session.id);
+    setSessionTitle(session.title);
+    editor.commands.setContent(session.content);
+    const text = editor.getText().trim();
+    setWordCount(text === "" ? 0 : text.split(/\s+/).filter(Boolean).length);
+  }
+
+  function handleDeleteSession(id: string) {
+    const updated = sessions.filter((s) => s.id !== id);
+    persistSessions(updated);
+    if (currentSessionId === id) {
+      setCurrentSessionId(null);
+      setSessionTitle("");
+      editor?.commands.clearContent();
+      setWordCount(0);
+    }
   }
 
   function handleImageUpload() {
@@ -102,8 +219,75 @@ export default function WorkspaceEditor({ userId }: WorkspaceEditorProps) {
     navigator.clipboard.writeText(editor.getText());
   }
 
+  function formatDate(iso: string): string {
+    try {
+      return new Date(iso).toLocaleDateString("es-ES", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+    } catch {
+      return "";
+    }
+  }
+
   return (
     <>
+      {/* Sessions panel */}
+      <div
+        className="flex flex-col rounded-2xl overflow-hidden mb-4"
+        style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}
+      >
+        <div className="px-5 py-3" style={{ borderBottom: "1px solid #F3F4F6" }}>
+          <h3 className="text-sm font-semibold text-gray-700">Sesiones guardadas</h3>
+        </div>
+
+        {sessions.length === 0 ? (
+          <div className="px-5 py-4 text-sm text-gray-400">
+            No tienes sesiones guardadas aún
+          </div>
+        ) : (
+          <div>
+            {sessions.map((session, index) => (
+              <div
+                key={session.id}
+                className="flex items-center justify-between px-5 py-3 transition hover:bg-gray-50"
+                style={{
+                  borderBottom: index < sessions.length - 1 ? "1px solid #F9FAFB" : "none",
+                  backgroundColor: currentSessionId === session.id ? "#EFF6FF" : undefined,
+                }}
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-800 truncate">
+                    {session.title || "Sin título"}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">{formatDate(session.savedAt)}</p>
+                </div>
+                <div className="flex items-center gap-1.5 ml-3 flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenSession(session)}
+                    className="rounded-lg px-2.5 py-1 text-xs font-medium transition hover:bg-blue-50 focus:outline-none"
+                    style={{ color: "#4A7FA5", border: "1px solid #D6E8F5" }}
+                  >
+                    Abrir
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteSession(session.id)}
+                    className="rounded-lg px-2.5 py-1 text-xs font-medium transition hover:bg-red-50 focus:outline-none"
+                    style={{ color: "#EF4444", border: "1px solid #FEE2E2" }}
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Editor */}
       <div
         className="flex flex-col rounded-2xl overflow-hidden"
         style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}
@@ -175,6 +359,25 @@ export default function WorkspaceEditor({ userId }: WorkspaceEditorProps) {
           <ToolbarBtn title="Copiar contenido" active={false} onClick={handleCopy}>
             <CopyIcon />
           </ToolbarBtn>
+
+          <div className="w-px h-5 mx-1.5 flex-shrink-0" style={{ backgroundColor: "#E5E7EB" }} />
+
+          <ToolbarBtn
+            title="Deshacer"
+            active={false}
+            disabled={!canUndo}
+            onClick={() => editor?.chain().focus().undo().run()}
+          >
+            <span className="text-sm leading-none">↩</span>
+          </ToolbarBtn>
+          <ToolbarBtn
+            title="Rehacer"
+            active={false}
+            disabled={!canRedo}
+            onClick={() => editor?.chain().focus().redo().run()}
+          >
+            <span className="text-sm leading-none">↪</span>
+          </ToolbarBtn>
         </div>
 
         <EditorContent editor={editor} />
@@ -229,11 +432,13 @@ function ToolbarBtn({
   children,
   title,
   active,
+  disabled,
   onClick,
 }: {
   children: ReactNode;
   title: string;
   active: boolean;
+  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -242,7 +447,8 @@ function ToolbarBtn({
       title={title}
       aria-label={title}
       onClick={onClick}
-      className="flex h-8 w-8 items-center justify-center rounded-lg transition focus:outline-none focus:ring-2 focus:ring-blue-200"
+      disabled={disabled}
+      className="flex h-8 w-8 items-center justify-center rounded-lg transition focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:opacity-40 disabled:cursor-not-allowed"
       style={{
         backgroundColor: active ? "#D6E8F5" : "transparent",
         color: active ? "#4A7FA5" : "#6B7280",
