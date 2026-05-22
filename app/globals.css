@@ -54,3 +54,42 @@ a {
 .focus-ring {
   @apply outline-none ring-offset-2 transition focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-canvas;
 }
+
+/* Tiptap rich text editor content styles */
+.nl-editor-content ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+}
+.nl-editor-content ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+}
+.nl-editor-content li {
+  margin: 0.25rem 0;
+}
+.nl-editor-content p {
+  margin: 0 0 0.5rem;
+}
+.nl-editor-content p:last-child {
+  margin-bottom: 0;
+}
+.nl-editor-content a {
+  color: #4A7FA5;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.nl-editor-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  margin: 0.5rem 0;
+}
+.nl-editor-content p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #d1d5db;
+  pointer-events: none;
+  height: 0;
+}

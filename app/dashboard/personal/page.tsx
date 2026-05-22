@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import CalmMode from "@/components/CalmMode";
+import WorkspaceEditor from "@/components/WorkspaceEditor";
 
 // ---------------------------------------------------------------------------
 // PLACEHOLDER DATA — replace with real API calls when backend is ready
@@ -25,10 +26,6 @@ function formatDuration(seconds: number): string {
   const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, "0");
   const s = (seconds % 60).toString().padStart(2, "0");
   return `${h}:${m}:${s}`;
-}
-
-function countWords(text: string): number {
-  return text.trim() === "" ? 0 : text.trim().split(/\s+/).length;
 }
 
 function MiniChart({ bpmData, spo2Data }: { bpmData: number[]; spo2Data: number[] }) {
@@ -77,8 +74,6 @@ export default function PersonalDashboardPage() {
   const { user, loading, logout } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<Tab>("Escritorio");
-  const [sessionTitle, setSessionTitle] = useState("");
-  const [sessionText, setSessionText] = useState("");
   const [sessionSeconds, setSessionSeconds] = useState(0); // PLACEHOLDER: session seconds synced with API
   const [calmModeActive, setCalmModeActive] = useState(false);
 
@@ -108,7 +103,6 @@ export default function PersonalDashboardPage() {
     );
   }
 
-  const wordCount = countWords(sessionText);
   const sessionGoalSeconds = PLACEHOLDER_SESSION_GOAL_MIN * 60;
   const sessionProgressPct = Math.min(100, (sessionSeconds / sessionGoalSeconds) * 100);
   const tabs: Tab[] = ["Escritorio", "Historial", "Configuración"];
@@ -169,79 +163,12 @@ export default function PersonalDashboardPage() {
       </header>
 
       {/* ── Main split layout ──────────────────────────────────────────────── */}
-      <main className="flex-1 grid grid-cols-1 lg:grid-cols-5 gap-4 p-4 sm:p-6 max-w-screen-xl mx-auto w-full">
+      <main className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 p-4 sm:p-6 max-w-screen-xl mx-auto w-full">
 
         {/* ── Left: Text Editor ────────────────────────────────────────────── */}
-        <div className="lg:col-span-3 flex flex-col gap-3">
+        <div className="lg:col-span-2 flex flex-col gap-3">
 
-          {/* Editor card */}
-          <div
-            className="flex flex-col rounded-2xl overflow-hidden"
-            style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}
-          >
-            {/* Session title */}
-            <input
-              type="text"
-              placeholder="Título de la sesión..."
-              value={sessionTitle}
-              onChange={(e) => setSessionTitle(e.target.value)}
-              className="w-full px-5 py-4 text-lg font-semibold text-gray-800 placeholder:text-gray-300 bg-transparent focus:outline-none"
-              style={{ borderBottom: "1px solid #F3F4F6" }}
-            />
-
-            {/* Formatting toolbar */}
-            <div
-              className="flex items-center gap-0.5 px-3 py-2 flex-wrap"
-              style={{ borderBottom: "1px solid #F3F4F6" }}
-            >
-              <ToolbarBtn title="Negrita"><BoldLabel /></ToolbarBtn>
-              <ToolbarBtn title="Cursiva"><ItalicLabel /></ToolbarBtn>
-              <ToolbarBtn title="Subrayado"><UnderlineLabel /></ToolbarBtn>
-
-              <div className="w-px h-5 mx-1.5 flex-shrink-0" style={{ backgroundColor: "#E5E7EB" }} />
-
-              <ToolbarBtn title="Lista con viñetas"><BulletListIcon /></ToolbarBtn>
-              <ToolbarBtn title="Lista numerada"><NumberedListIcon /></ToolbarBtn>
-
-              <div className="w-px h-5 mx-1.5 flex-shrink-0" style={{ backgroundColor: "#E5E7EB" }} />
-
-              <ToolbarBtn title="Insertar imagen"><ImageIcon /></ToolbarBtn>
-              <ToolbarBtn title="Dibujar"><PenIcon /></ToolbarBtn>
-              <ToolbarBtn title="Insertar enlace"><LinkIcon /></ToolbarBtn>
-              <ToolbarBtn title="Copiar"><CopyIcon /></ToolbarBtn>
-            </div>
-
-            {/* Writing area */}
-            <textarea
-              className="w-full px-5 py-4 text-sm text-gray-700 placeholder:text-gray-300 bg-transparent resize-none focus:outline-none leading-relaxed"
-              placeholder={"Comienza a escribir tu sesión aquí...\n\nEste es tu espacio seguro para expresarte. Puedes anotar pensamientos, reflexiones o cualquier cosa que quieras recordar de esta sesión."}
-              value={sessionText}
-              onChange={(e) => setSessionText(e.target.value)}
-              style={{ minHeight: "320px" }}
-            />
-
-            {/* Bottom status bar */}
-            <div
-              className="flex items-center justify-between px-5 py-2.5 text-xs text-gray-400"
-              style={{ borderTop: "1px solid #F3F4F6" }}
-            >
-              {/* PLACEHOLDER: word count from textarea */}
-              <span>Palabras: {wordCount}</span>
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full animate-pulse" style={{ backgroundColor: "#34D399" }} />
-                {/* PLACEHOLDER: session timer synced with API */}
-                <span>Sesión activa: {formatDuration(sessionSeconds)}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Save button — PLACEHOLDER: POST /sessions */}
-          <button
-            className="w-full rounded-xl px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2"
-            style={{ backgroundColor: "#4A7FA5" }}
-          >
-            Guardar sesión
-          </button>
+          <WorkspaceEditor userId={user.token} />
 
           {/* Calm assistant message */}
           <div
@@ -268,7 +195,7 @@ export default function PersonalDashboardPage() {
         </div>
 
         {/* ── Right: Metrics Panel ──────────────────────────────────────────── */}
-        <div className="lg:col-span-2 flex flex-col gap-4">
+        <div className="lg:col-span-1 flex flex-col gap-4">
 
           {/* Status badge — PLACEHOLDER: real-time status from biometric analysis */}
           <div className="flex justify-end">
@@ -414,98 +341,6 @@ export default function PersonalDashboardPage() {
 }
 
 // ── Small helper components ──────────────────────────────────────────────────
-
-function ToolbarBtn({ children, title }: { children: ReactNode; title: string }) {
-  return (
-    <button
-      type="button"
-      title={title}
-      aria-label={title}
-      className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-200"
-    >
-      {children}
-    </button>
-  );
-}
-
-// ── Toolbar labels ────────────────────────────────────────────────────────────
-
-function BoldLabel() {
-  return <span className="text-sm font-bold leading-none">B</span>;
-}
-
-function ItalicLabel() {
-  return <span className="text-sm italic leading-none" style={{ fontFamily: "Georgia, serif" }}>I</span>;
-}
-
-function UnderlineLabel() {
-  return <span className="text-sm underline leading-none">U</span>;
-}
-
-// ── SVG toolbar icons ─────────────────────────────────────────────────────────
-
-function BulletListIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="currentColor" aria-hidden="true">
-      <circle cx="2.5" cy="4.5" r="1.1" />
-      <circle cx="2.5" cy="8" r="1.1" />
-      <circle cx="2.5" cy="11.5" r="1.1" />
-      <rect x="5" y="3.75" width="9" height="1.5" rx="0.75" />
-      <rect x="5" y="7.25" width="9" height="1.5" rx="0.75" />
-      <rect x="5" y="10.75" width="9" height="1.5" rx="0.75" />
-    </svg>
-  );
-}
-
-function NumberedListIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="currentColor" aria-hidden="true">
-      <text x="0.5" y="5.5" fontSize="4.5" fontFamily="monospace">1.</text>
-      <text x="0.5" y="9" fontSize="4.5" fontFamily="monospace">2.</text>
-      <text x="0.5" y="12.5" fontSize="4.5" fontFamily="monospace">3.</text>
-      <rect x="6" y="3.75" width="8.5" height="1.5" rx="0.75" />
-      <rect x="6" y="7.25" width="8.5" height="1.5" rx="0.75" />
-      <rect x="6" y="10.75" width="8.5" height="1.5" rx="0.75" />
-    </svg>
-  );
-}
-
-function ImageIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.4} aria-hidden="true">
-      <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
-      <circle cx="5.5" cy="5.75" r="1.25" />
-      <path d="M1.5 11.5l3.5-3.5 3 3 2.5-2.5 3.5 3.5" strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function PenIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.4} aria-hidden="true">
-      <path d="M11 2.5l2.5 2.5-7.5 7.5H3.5V10L11 2.5z" strokeLinejoin="round" strokeLinecap="round" />
-      <path d="M9.5 4l2 2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function LinkIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.4} aria-hidden="true">
-      <path d="M6.5 9.5a3.5 3.5 0 005 0l2-2a3.5 3.5 0 00-5-5L7.5 3.5" strokeLinecap="round" />
-      <path d="M9.5 6.5a3.5 3.5 0 00-5 0l-2 2a3.5 3.5 0 005 5L8.5 12.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function CopyIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.4} aria-hidden="true">
-      <rect x="5.5" y="1.5" width="9" height="9" rx="1.5" />
-      <path d="M10.5 10.5v2a1.5 1.5 0 01-1.5 1.5h-7a1.5 1.5 0 01-1.5-1.5v-7A1.5 1.5 0 012 4.5h2" strokeLinecap="round" />
-    </svg>
-  );
-}
 
 function FaceSmileIcon() {
   return (
