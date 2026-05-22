@@ -115,7 +115,15 @@ export default function PersonalDashboardPage() {
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: "#F5F0E8" }}>
-      {calmModeActive && <CalmMode onExit={() => setCalmModeActive(false)} />}
+      {calmModeActive && (
+        <CalmMode
+          onExit={() => setCalmModeActive(false)}
+          onSAMComplete={(valence, arousal, dominance) => {
+            // TODO: POST /crises/{crisisId}/sam with { valence, arousal, dominance }
+            console.log("[SAM] valence:", valence, "arousal:", arousal, "dominance:", dominance);
+          }}
+        />
+      )}
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header

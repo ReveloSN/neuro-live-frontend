@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import SAMQuestionnaire from "@/components/SAMQuestionnaire";
 
 interface CalmModeProps {
   onExit: () => void;
+  onSAMComplete?: (valence: number, arousal: number, dominance: number) => void;
 }
 
 type BreathPhase = "inhale" | "hold" | "exhale";
@@ -25,12 +27,26 @@ const PARTICLES = Array.from({ length: 18 }, (_, i) => ({
   amplitude: 30 + (i % 40),
 }));
 
-export default function CalmMode({ onExit }: CalmModeProps) {
+export default function CalmMode({ onExit, onSAMComplete }: CalmModeProps) {
   const [countdown, setCountdown] = useState(3);
   const [phase, setPhase] = useState<BreathPhase>("inhale");
   const [cycles, setCycles] = useState(0);
+  const [showSAM, setShowSAM] = useState(false);
   const phaseRef = useRef<BreathPhase>("inhale");
   phaseRef.current = phase;
+
+  function handleExitClick() {
+    setShowSAM(true);
+  }
+
+  function handleSAMComplete(valence: number, arousal: number, dominance: number) {
+    onSAMComplete?.(valence, arousal, dominance);
+    onExit();
+  }
+
+  function handleSAMSkip() {
+    onExit();
+  }
 
   // Decrement countdown once per second until it reaches 0
   useEffect(() => {
@@ -311,7 +327,7 @@ export default function CalmMode({ onExit }: CalmModeProps) {
 
         {/* Exit button */}
         <button
-          onClick={onExit}
+          onClick={handleExitClick}
           style={{
             background: "transparent",
             border: "1px solid rgba(74,127,165,0.45)",
@@ -338,6 +354,14 @@ export default function CalmMode({ onExit }: CalmModeProps) {
           Salir del Modo Calma
         </button>
       </div>
+
+      {/* SAM questionnaire shown after user clicks exit */}
+      {showSAM && (
+        <SAMQuestionnaire
+          onComplete={handleSAMComplete}
+          onSkip={handleSAMSkip}
+        />
+      )}
     </div>
   );
 }
