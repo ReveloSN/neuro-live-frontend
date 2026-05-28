@@ -72,6 +72,7 @@ export default function ConfiguracionView({
   const [consentOn, setConsentOn] = useState(false);
   const [consentDate, setConsentDate] = useState<string | null>(null);
   const [savingConsent, setSavingConsent] = useState(false);
+  const [consentMsg, setConsentMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   // ── Clinical thresholds state (DOCTOR only) ────────────────────────────────
   const [threshPatientId, setThreshPatientId] = useState<string | null>(null);
@@ -162,17 +163,28 @@ export default function ConfiguracionView({
     if (!patientId) return;
     setSavingConsent(true);
     try {
-      // PLACEHOLDER: POST /biometrics/patients/{patientId}/consent
-      await fetch(`${API_BASE}/biometrics/patients/${patientId}/consent`, {
+      const res = await fetch(`${API_BASE}/biometrics/patients/${patientId}/consent`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
-      const now = new Date();
-      setConsentDate(
-        now.toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })
-      );
+      if (res.ok) {
+        const now = new Date();
+        setConsentDate(
+          now.toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })
+        );
+        setConsentMsg({ text: "Consentimiento registrado correctamente", ok: true });
+        setTimeout(() => setConsentMsg(null), 3000);
+      } else {
+        setConsentOn(false);
+        const msg =
+          res.status === 403
+            ? "Solo el paciente puede registrar este consentimiento"
+            : "Error al registrar el consentimiento. Intenta de nuevo.";
+        setConsentMsg({ text: msg, ok: false });
+      }
     } catch {
       setConsentOn(false);
+      setConsentMsg({ text: "Error al registrar el consentimiento. Intenta de nuevo.", ok: false });
     } finally {
       setSavingConsent(false);
     }
@@ -392,6 +404,19 @@ export default function ConfiguracionView({
               />
             </button>
           </div>
+
+          {consentMsg && (
+            <p
+              className="rounded-lg px-3 py-2 text-xs font-medium"
+              style={{
+                color: consentMsg.ok ? "#065F46" : "#991B1B",
+                backgroundColor: consentMsg.ok ? "#D1FAE5" : "#FEE2E2",
+              }}
+              role="status"
+            >
+              {consentMsg.text}
+            </p>
+          )}
 
           <p className="text-xs text-gray-400">
             {consentDate
