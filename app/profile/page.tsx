@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { normalizeApiUrl } from "@/lib/api";
+import { getApiBaseUrl } from "@/lib/api";
 import type { UserProfileResponse } from "@/lib/types";
 
 const ROLE_DASHBOARD: Record<string, string> = {
@@ -37,14 +37,9 @@ export default function ProfilePage() {
   useEffect(() => {
     if (!user) return;
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
-    if (!apiUrl) {
-      setFetchError("La URL del servidor no está configurada.");
-      setFetchLoading(false);
-      return;
-    }
+    const apiUrl = getApiBaseUrl();
 
-    fetch(`${normalizeApiUrl(apiUrl)}/users/me`, {
+    fetch(`${apiUrl}/users/me`, {
       headers: {
         Authorization: `Bearer ${user.token}`,
         Accept: "application/json",
@@ -80,15 +75,10 @@ export default function ProfilePage() {
     setSaveSuccess(false);
     setSaveError(null);
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
-    if (!apiUrl) {
-      setSaveError("La URL del servidor no está configurada.");
-      setSaving(false);
-      return;
-    }
+    const apiUrl = getApiBaseUrl();
 
     try {
-      const res = await fetch(`${normalizeApiUrl(apiUrl)}/users/me`, {
+      const res = await fetch(`${apiUrl}/users/me`, {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${user.token}`,

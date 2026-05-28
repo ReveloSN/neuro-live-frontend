@@ -3,8 +3,9 @@
 import { useState, FormEvent, Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { getApiBaseUrl } from "@/lib/api";
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "https://neurolive-backend.azurewebsites.net").replace(/\/$/, "");
+const API_BASE = getApiBaseUrl();
 
 const ERROR_MESSAGES: Record<number, string> = {
   400: "El código ingresado no es válido.",

@@ -7,23 +7,20 @@ type BackendHealthState = {
   tone: HealthTone;
 };
 
+const DEFAULT_API_URL = "https://neurolive-backend.azurewebsites.net";
+
 export function normalizeApiUrl(value: string) {
   return value.endsWith("/") ? value.slice(0, -1) : value;
 }
 
+export function getApiBaseUrl() {
+  return normalizeApiUrl(process.env.NEXT_PUBLIC_API_URL?.trim() || DEFAULT_API_URL);
+}
+
 export async function getBackendHealth(): Promise<BackendHealthState> {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
+  const apiUrl = getApiBaseUrl();
 
-  if (!apiUrl) {
-    return {
-      apiUrl: null,
-      description: "Backend not configured yet. Add NEXT_PUBLIC_API_URL to enable the health check.",
-      label: "Not configured",
-      tone: "neutral"
-    };
-  }
-
-  const healthUrl = `${normalizeApiUrl(apiUrl)}/health`;
+  const healthUrl = `${apiUrl}/health`;
 
   try {
     const response = await fetch(healthUrl, {

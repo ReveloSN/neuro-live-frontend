@@ -5,18 +5,31 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import HistorialView from "@/components/HistorialView";
 import ConfiguracionView from "@/components/ConfiguracionView";
+import {
+  NeuroLiveApiError,
+  getLatestTelemetry,
+  getMyLinks,
+  getPatientCrises,
+  optionalBackendGet,
+} from "@/lib/clinical-api";
+import type { BiometricTelemetrySampleResponse, CrisisEventResponse } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // PLACEHOLDER DATA — replace with GET /doctor/patients
 // ---------------------------------------------------------------------------
 interface Patient {
   id: string;
+  patientId?: number;
   name: string;
   status: "Normal" | "Riesgo" | "Crisis";
   // PLACEHOLDER: replace with GET /patients/{id}/biometric-evolution?from=&to=
   evolutionDates: string[];
   bpmSeries: number[];
   spo2Series: number[];
+  latestTelemetry?: BiometricTelemetrySampleResponse | null;
+  crisisEvents?: CrisisEvent[];
+  fromBackend?: boolean;
+  error?: string;
 }
 
 const PLACEHOLDER_PATIENTS: Patient[] = [
@@ -54,6 +67,8 @@ interface CrisisEvent {
   tipoIntervencion: string;
   valenciaSAM: number;
   arousalSAM: number;
+  estado?: string;
+  endedAt?: string | null;
 }
 
 const PLACEHOLDER_CRISIS_EVENTS: CrisisEvent[] = [
@@ -91,6 +106,67 @@ const STATUS_STYLES: Record<string, { bg: string; color: string }> = {
 };
 
 type Tab = "Mis Pacientes" | "Historial" | "Configuración";
+const DASHBOARD_POLL_MS = 10000;
+
+function buildRealtimeSeries(value: number | undefined) {
+  if (typeof value !== "number") return [];
+  return Array.from({ length: 6 }, () => Math.round(value));
+}
+
+function realtimeDates() {
+  return ["-50s", "-40s", "-30s", "-20s", "-10s", "Ahora"];
+}
+
+function statusFromPatientData(
+  telemetry: BiometricTelemetrySampleResponse | null,
+  crisisEvents: CrisisEvent[],
+): Patient["status"] {
+  if (crisisEvents.some((event) => event.endedAt == null || event.estado === "ACTIVE_CRISIS")) return "Crisis";
+  if (telemetry?.predictionState === "PRE_CRISIS") return "Crisis";
+  if (telemetry?.predictionState === "WARNING") return "Riesgo";
+  return "Normal";
+}
+
+function formatEventDate(value: string | null | undefined) {
+  if (!value) return "Sin fecha";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Sin fecha";
+  return parsed.toLocaleDateString("es-CO");
+}
+
+function formatEventDuration(seconds: number | null | undefined) {
+  if (seconds == null) return "Activa";
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return `${minutes} min ${rest} s`;
+}
+
+function mapIntervention(value: string | null | undefined) {
+  if (!value) return "Sin intervención";
+  return value.replaceAll("_", " ").toLowerCase();
+}
+
+function mapCrisisEvents(events: CrisisEventResponse[]) {
+  return events.map((event) => ({
+    id: String(event.id),
+    fecha: formatEventDate(event.startedAt),
+    duracion: formatEventDuration(event.durationSeconds),
+    tipoIntervencion: mapIntervention(event.interventionType),
+    valenciaSAM: event.samValence ?? 0,
+    arousalSAM: event.samArousal ?? 0,
+    estado: event.state,
+    endedAt: event.endedAt,
+  }));
+}
+
+function resolveDoctorError(error: unknown) {
+  if (error instanceof NeuroLiveApiError) {
+    if (error.status === 403) return "El vínculo ya no concede acceso a ese paciente.";
+    if (error.status === 401) return "Sesion expirada. Vuelve a iniciar sesion.";
+    return error.message;
+  }
+  return "No se pudieron cargar los pacientes reales.";
+}
 
 // ── Biometric evolution chart ────────────────────────────────────────────────
 
@@ -177,6 +253,9 @@ export default function DoctorDashboardPage() {
 
   const [activeTab, setActiveTab] = useState<Tab>("Mis Pacientes");
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [patients, setPatients] = useState<Patient[]>(PLACEHOLDER_PATIENTS);
+  const [patientsLoading, setPatientsLoading] = useState(false);
+  const [patientsError, setPatientsError] = useState<string | null>(null);
 
   // PLACEHOLDER date range — replace with a real date-range picker
   const DATE_FROM = "01/03/2026";
@@ -203,6 +282,90 @@ export default function DoctorDashboardPage() {
   useEffect(() => {
     if (!loading && !user) router.push("/login");
   }, [loading, user, router]);
+
+  useEffect(() => {
+    if (!user || user.role !== "DOCTOR") return;
+
+    let active = true;
+    const token = user.token;
+
+    async function loadDoctorPatients(showSpinner: boolean) {
+      if (showSpinner) setPatientsLoading(true);
+      setPatientsError(null);
+
+      try {
+        const links = await getMyLinks(token);
+        const activeLinks = links.filter((link) => link.status === "ACTIVE" && link.patientId != null);
+
+        if (activeLinks.length === 0) {
+          if (!active) return;
+          setPatients(PLACEHOLDER_PATIENTS);
+          setSelectedPatient((current) => current?.fromBackend ? null : current);
+          return;
+        }
+
+        // Usa /links/me como fuente de pacientes vinculados y consulta datos clinicos por paciente.
+        const realPatients = await Promise.all(
+          activeLinks.map(async (link) => {
+            const patientId = link.patientId as number;
+            try {
+              const [latestTelemetry, crisisPage] = await Promise.all([
+                optionalBackendGet(getLatestTelemetry(token, patientId)),
+                getPatientCrises(token, patientId, 10),
+              ]);
+              const crisisEvents = mapCrisisEvents(crisisPage.content ?? []);
+              return {
+                id: String(patientId),
+                patientId,
+                name: `Paciente #${patientId}`,
+                status: statusFromPatientData(latestTelemetry, crisisEvents),
+                evolutionDates: latestTelemetry ? realtimeDates() : [],
+                bpmSeries: buildRealtimeSeries(latestTelemetry?.bpm),
+                spo2Series: buildRealtimeSeries(latestTelemetry?.spo2),
+                latestTelemetry,
+                crisisEvents,
+                fromBackend: true,
+              } satisfies Patient;
+            } catch (error) {
+              return {
+                id: String(patientId),
+                patientId,
+                name: `Paciente #${patientId}`,
+                status: "Riesgo",
+                evolutionDates: [],
+                bpmSeries: [],
+                spo2Series: [],
+                latestTelemetry: null,
+                crisisEvents: [],
+                fromBackend: true,
+                error: resolveDoctorError(error),
+              } satisfies Patient;
+            }
+          }),
+        );
+
+        if (!active) return;
+        setPatients(realPatients);
+        setSelectedPatient((current) => {
+          if (!current?.fromBackend) return current;
+          return realPatients.find((patient) => patient.id === current.id) ?? null;
+        });
+      } catch (error) {
+        if (!active) return;
+        setPatientsError(resolveDoctorError(error));
+      } finally {
+        if (active && showSpinner) setPatientsLoading(false);
+      }
+    }
+
+    void loadDoctorPatients(true);
+    const id = window.setInterval(() => void loadDoctorPatients(false), DASHBOARD_POLL_MS);
+
+    return () => {
+      active = false;
+      window.clearInterval(id);
+    };
+  }, [user]);
 
   useEffect(() => {
     if (!selectedPatient) return;
@@ -234,6 +397,9 @@ export default function DoctorDashboardPage() {
   }
 
   const tabs: Tab[] = ["Mis Pacientes", "Historial", "Configuración"];
+  const selectedEvents = selectedPatient?.fromBackend
+    ? selectedPatient.crisisEvents ?? []
+    : PLACEHOLDER_CRISIS_EVENTS;
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#F5F0E8" }}>
@@ -309,9 +475,8 @@ export default function DoctorDashboardPage() {
               {/* Patient selector */}
               <div className="flex-1 min-w-[240px]">
                 <p className="mb-2 text-xs font-medium text-gray-500">Paciente</p>
-                {/* PLACEHOLDER patient list — replace with GET /doctor/patients */}
                 <div className="flex flex-wrap gap-2">
-                  {PLACEHOLDER_PATIENTS.map((p) => {
+                  {patients.map((p) => {
                     const s = STATUS_STYLES[p.status];
                     const isSelected = selectedPatient?.id === p.id;
                     return (
@@ -342,6 +507,12 @@ export default function DoctorDashboardPage() {
                     );
                   })}
                 </div>
+                {patientsLoading && (
+                  <p className="mt-2 text-xs text-gray-400">Cargando pacientes vinculados...</p>
+                )}
+                {patientsError && (
+                  <p className="mt-2 text-xs font-medium" style={{ color: "#991B1B" }}>{patientsError}</p>
+                )}
               </div>
 
               {/* Date range */}
@@ -385,12 +556,22 @@ export default function DoctorDashboardPage() {
                       </span>
                     </div>
                   </div>
-                  {/* PLACEHOLDER chart data — replace with GET /patients/{id}/biometric-evolution?from=&to= */}
-                  <EvolutionChart
-                    dates={selectedPatient.evolutionDates}
-                    bpmData={selectedPatient.bpmSeries}
-                    spo2Data={selectedPatient.spo2Series}
-                  />
+                  {selectedPatient.fromBackend && !selectedPatient.latestTelemetry ? (
+                    <p className="rounded-xl px-4 py-6 text-center text-sm text-gray-500" style={{ backgroundColor: "#F9FAFB" }}>
+                      {selectedPatient.error ?? "Este paciente aun no tiene telemetria persistida."}
+                    </p>
+                  ) : (
+                    <EvolutionChart
+                      dates={selectedPatient.evolutionDates}
+                      bpmData={selectedPatient.bpmSeries}
+                      spo2Data={selectedPatient.spo2Series}
+                    />
+                  )}
+                  {selectedPatient.latestTelemetry?.predictionState && (
+                    <p className="mt-3 text-xs text-gray-500">
+                      Prediccion actual: {selectedPatient.latestTelemetry.predictionState}
+                    </p>
+                  )}
                 </section>
 
                 {/* Activation thresholds — read-only, configured in Configuración tab */}
@@ -450,13 +631,11 @@ export default function DoctorDashboardPage() {
                     <h2 id="crisis-heading" className="text-sm font-semibold text-gray-700">
                       Historial de eventos de crisis
                     </h2>
-                    {/* PLACEHOLDER count — replace with events.length from API */}
                     <span className="text-xs text-gray-400">
-                      {PLACEHOLDER_CRISIS_EVENTS.length} eventos
+                      {selectedEvents.length} eventos
                     </span>
                   </div>
 
-                  {/* PLACEHOLDER rows — replace with GET /patients/{id}/crisis-events?from=&to= */}
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
@@ -474,24 +653,31 @@ export default function DoctorDashboardPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
-                        {PLACEHOLDER_CRISIS_EVENTS.map((ev) => (
-                          <tr key={ev.id} className="transition-colors hover:bg-gray-50">
-                            <td className="whitespace-nowrap px-5 py-3.5 text-gray-700">{ev.fecha}</td>
-                            <td className="whitespace-nowrap px-5 py-3.5 text-gray-700">{ev.duracion}</td>
-                            <td className="px-5 py-3.5 text-gray-700">{ev.tipoIntervencion}</td>
-                            <td className="px-5 py-3.5 text-center text-gray-700">{ev.valenciaSAM}</td>
-                            <td className="px-5 py-3.5 text-center text-gray-700">{ev.arousalSAM}</td>
-                            <td className="px-5 py-3.5">
-                              {/* PLACEHOLDER link — replace with /dashboard/doctor/events/{id} */}
-                              <button
-                                className="text-xs font-medium transition hover:underline focus:outline-none"
-                                style={{ color: "#4A7FA5" }}
-                              >
-                                Ver detalles
-                              </button>
+                        {selectedEvents.length > 0 ? (
+                          selectedEvents.map((ev) => (
+                            <tr key={ev.id} className="transition-colors hover:bg-gray-50">
+                              <td className="whitespace-nowrap px-5 py-3.5 text-gray-700">{ev.fecha}</td>
+                              <td className="whitespace-nowrap px-5 py-3.5 text-gray-700">{ev.duracion}</td>
+                              <td className="px-5 py-3.5 text-gray-700">{ev.tipoIntervencion}</td>
+                              <td className="px-5 py-3.5 text-center text-gray-700">{ev.valenciaSAM}</td>
+                              <td className="px-5 py-3.5 text-center text-gray-700">{ev.arousalSAM}</td>
+                              <td className="px-5 py-3.5">
+                                <button
+                                  className="text-xs font-medium transition hover:underline focus:outline-none"
+                                  style={{ color: "#4A7FA5" }}
+                                >
+                                  Ver detalles
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={6} className="px-5 py-6 text-center text-sm text-gray-400">
+                              No hay eventos de crisis para este paciente.
                             </td>
                           </tr>
-                        ))}
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -539,7 +725,7 @@ export default function DoctorDashboardPage() {
         )}
 
         {activeTab === "Historial" && (
-          <HistorialView role="DOCTOR" />
+          <HistorialView role="DOCTOR" userToken={user.token} />
         )}
 
         {activeTab === "Configuración" && (

@@ -3,9 +3,10 @@
 import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { getApiBaseUrl } from "@/lib/api";
 import type { UserRole, RegisterRequest, RegisterResponse } from "@/lib/types";
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "https://neurolive-backend.azurewebsites.net").replace(/\/$/, "");
+const API_BASE = getApiBaseUrl();
 
 const ROLES: { label: string; value: UserRole }[] = [
   { label: "Paciente", value: "PATIENT" },

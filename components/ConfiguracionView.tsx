@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { getApiBaseUrl } from "@/lib/api";
 import type { UserRole } from "@/lib/types";
 
 export type ConfiguracionRole = UserRole;
@@ -21,7 +22,7 @@ const PLACEHOLDER_PATIENTS = [
   { id: "p3", name: "Ana Martínez" },
 ];
 
-const API_BASE = "https://neurolive-backend.azurewebsites.net";
+const API_BASE = getApiBaseUrl();
 
 interface UserProfile {
   id: string;

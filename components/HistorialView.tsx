@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { getCurrentUserProfile, getMyLinks, getPatientCrises } from "@/lib/clinical-api";
+import type { CrisisEventResponse } from "@/lib/types";
 
 export type HistorialRole = "PATIENT" | "USER_PERSONAL" | "CAREGIVER" | "DOCTOR";
 
@@ -113,6 +115,8 @@ const PLACEHOLDER_SESSIONS: SessionRecord[] = [
 interface ClinicalPatient {
   id: string;
   name: string;
+  patientId?: number;
+  fromBackend?: boolean;
 }
 
 // PLACEHOLDER: patient list from GET /doctor/patients
@@ -138,6 +142,135 @@ const PLACEHOLDER_CRISIS_EVENTS: CrisisEventRecord[] = [
   { id: "e3", date: "16 may 2026", duration: "6 min 10 s", interventionType: "Luz tenue",           valence: 2, arousal: 5 },
   { id: "e4", date: "12 may 2026", duration: "1 min 50 s", interventionType: "Modo Calma",          valence: 4, arousal: 3 },
 ];
+
+function formatBackendDate(value: string | null | undefined) {
+  if (!value) return "Sin fecha";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Sin fecha";
+  return parsed.toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function formatBackendDuration(seconds: number | null | undefined) {
+  if (seconds == null) return "Activa";
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return `${minutes} min ${rest} s`;
+}
+
+function formatBackendIntervention(value: string | null | undefined) {
+  if (!value) return "Sin intervención";
+  return value.replaceAll("_", " ").toLowerCase();
+}
+
+function mapBackendEvents(events: CrisisEventResponse[]): CrisisEventRecord[] {
+  return events.map((event) => ({
+    id: String(event.id),
+    date: formatBackendDate(event.startedAt),
+    duration: formatBackendDuration(event.durationSeconds),
+    interventionType: formatBackendIntervention(event.interventionType),
+    valence: event.samValence ?? 0,
+    arousal: event.samArousal ?? 0,
+  }));
+}
+
+function sessionStatusFromBackend(event: CrisisEventResponse): SessionStatus {
+  if (event.state === "ACTIVE_CRISIS" || event.emotionalState === "ACTIVE_CRISIS") return "Crisis";
+  if (event.state === "RISK_ELEVATED" || event.emotionalState === "RISK_ELEVATED") return "Riesgo";
+  return "Normal";
+}
+
+function mapBackendSessions(events: CrisisEventResponse[]): SessionRecord[] {
+  return events.map((event) => {
+    const status = sessionStatusFromBackend(event);
+    return {
+      id: String(event.id),
+      date: formatBackendDate(event.startedAt),
+      duration: formatBackendDuration(event.durationSeconds),
+      status,
+      crisisDuration: status === "Normal" ? undefined : formatBackendDuration(event.durationSeconds),
+      interventionType: formatBackendIntervention(event.interventionType),
+      sam: {
+        valence: event.samValence ?? 3,
+        arousal: event.samArousal ?? 3,
+        dominance: 3,
+      },
+    };
+  });
+}
+
+function useClinicalHistory(userToken?: string) {
+  const [patients, setPatients] = useState<ClinicalPatient[]>(PLACEHOLDER_CLINICAL_PATIENTS);
+  const [eventsByPatient, setEventsByPatient] = useState<Record<string, CrisisEventRecord[]>>({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [usingBackend, setUsingBackend] = useState(false);
+
+  useEffect(() => {
+    if (!userToken) {
+      setPatients(PLACEHOLDER_CLINICAL_PATIENTS);
+      setEventsByPatient({});
+      setUsingBackend(false);
+      return;
+    }
+
+    let active = true;
+    const token = userToken;
+
+    async function loadHistory() {
+      setLoading(true);
+      setError(null);
+      try {
+        const links = await getMyLinks(token);
+        const activeLinks = links.filter((link) => link.status === "ACTIVE" && link.patientId != null);
+
+        if (activeLinks.length === 0) {
+          if (!active) return;
+          setPatients(PLACEHOLDER_CLINICAL_PATIENTS);
+          setEventsByPatient({});
+          setUsingBackend(false);
+          return;
+        }
+
+        // Carga pacientes reales vinculados y evita mostrar eventos de ejemplo si hay datos reales.
+        const realPatients: ClinicalPatient[] = activeLinks.map((link) => ({
+          id: String(link.patientId),
+          patientId: link.patientId as number,
+          name: `Paciente #${link.patientId}`,
+          fromBackend: true,
+        }));
+
+        const entries = await Promise.all(
+          realPatients.map(async (patient) => {
+            try {
+              const page = await getPatientCrises(token, patient.patientId as number, 20);
+              return [patient.id, mapBackendEvents(page.content ?? [])] as const;
+            } catch {
+              return [patient.id, []] as const;
+            }
+          }),
+        );
+
+        if (!active) return;
+        setPatients(realPatients);
+        setEventsByPatient(Object.fromEntries(entries));
+        setUsingBackend(true);
+      } catch {
+        if (!active) return;
+        setError("No se pudo cargar el historial clinico real.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    void loadHistory();
+
+    return () => {
+      active = false;
+    };
+  }, [userToken]);
+
+  return { patients, eventsByPatient, loading, error, usingBackend };
+}
 
 // ─── Shared sub-components ─────────────────────────────────────────────────────
 
@@ -231,29 +364,59 @@ function PatientHistorial({ userToken, refreshKey }: { userToken?: string; refre
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
 
   useEffect(() => {
+    let active = true;
+
+    function loadLocalSessions() {
+      try {
+        const raw = localStorage.getItem(`nl_historial_${userToken}`);
+        if (!raw) { setSessions([]); return; }
+        const saved: LocalSavedSession[] = JSON.parse(raw);
+        if (saved.length === 0) { setSessions([]); return; }
+        setSessions(
+          saved.slice().reverse().map((ls): SessionRecord => ({
+            id: ls.id,
+            date: ls.date,
+            duration: ls.duration,
+            status: (ls.status as SessionStatus | undefined) ?? "Normal",
+            interventionType: ls.interventionType,
+            breathingCycles: ls.breathingCycles,
+            sam: { valence: ls.valence, arousal: ls.arousal, dominance: ls.dominance },
+          }))
+        );
+      } catch {
+        setSessions([]);
+      }
+    }
+
     if (!userToken) {
       setSessions(PLACEHOLDER_SESSIONS);
       return;
     }
-    try {
-      const raw = localStorage.getItem(`nl_historial_${userToken}`);
-      if (!raw) { setSessions([]); return; }
-      const saved: LocalSavedSession[] = JSON.parse(raw);
-      if (saved.length === 0) { setSessions([]); return; }
-      setSessions(
-        saved.slice().reverse().map((ls): SessionRecord => ({
-          id: ls.id,
-          date: ls.date,
-          duration: ls.duration,
-          status: (ls.status as SessionStatus | undefined) ?? "Normal",
-          interventionType: ls.interventionType,
-          breathingCycles: ls.breathingCycles,
-          sam: { valence: ls.valence, arousal: ls.arousal, dominance: ls.dominance },
-        }))
-      );
-    } catch {
-      setSessions([]);
+
+    const token = userToken;
+
+    async function loadBackendSessions() {
+      try {
+        const profile = await getCurrentUserProfile(token);
+        const page = await getPatientCrises(token, profile.id, 20);
+        if (!active) return;
+        const backendSessions = mapBackendSessions(page.content ?? []);
+        if (backendSessions.length > 0) {
+          setSessions(backendSessions);
+          return;
+        }
+        loadLocalSessions();
+      } catch {
+        if (active) loadLocalSessions();
+      }
     }
+
+    // Prefiere crisis reales del backend; localStorage queda como respaldo de sesiones de calma.
+    void loadBackendSessions();
+
+    return () => {
+      active = false;
+    };
   }, [userToken, refreshKey]);
 
   function toggle(id: string) {
@@ -373,9 +536,10 @@ function PatientHistorial({ userToken, refreshKey }: { userToken?: string; refre
 
 // ─── Caregiver view ────────────────────────────────────────────────────────────
 
-function CaregiverHistorial() {
+function CaregiverHistorial({ userToken }: { userToken?: string }) {
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [openEventIds, setOpenEventIds] = useState<Set<string>>(new Set());
+  const { patients, eventsByPatient, loading, error, usingBackend } = useClinicalHistory(userToken);
 
   function toggleEvent(id: string) {
     setOpenEventIds((prev) => {
@@ -390,8 +554,11 @@ function CaregiverHistorial() {
     console.log("[PLACEHOLDER] Exportar CSV — GET /crises/patients/{patientId}?format=csv");
   }
 
-  // PLACEHOLDER: events from GET /crises/patients/{patientId}
-  const events = PLACEHOLDER_CRISIS_EVENTS;
+  const events = selectedPatientId
+    ? usingBackend
+      ? eventsByPatient[selectedPatientId] ?? []
+      : PLACEHOLDER_CRISIS_EVENTS
+    : [];
 
   return (
     <div className="space-y-6">
@@ -400,9 +567,8 @@ function CaregiverHistorial() {
       {/* Patient selector */}
       <div>
         <p className="mb-2 text-xs font-medium text-gray-500">Seleccionar paciente</p>
-        {/* PLACEHOLDER: patients from GET /crises/patients */}
         <div className="flex flex-wrap gap-2">
-          {PLACEHOLDER_CLINICAL_PATIENTS.map((p) => {
+          {patients.map((p) => {
             const isSelected = selectedPatientId === p.id;
             return (
               <button
@@ -421,6 +587,8 @@ function CaregiverHistorial() {
             );
           })}
         </div>
+        {loading && <p className="mt-2 text-xs text-gray-400">Cargando historial real...</p>}
+        {error && <p className="mt-2 text-xs font-medium" style={{ color: "#991B1B" }}>{error}</p>}
       </div>
 
       {selectedPatientId === null ? (
@@ -528,9 +696,10 @@ function CaregiverHistorial() {
 
 // ─── Doctor view ───────────────────────────────────────────────────────────────
 
-function DoctorHistorial() {
+function DoctorHistorial({ userToken }: { userToken?: string }) {
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [openEventIds, setOpenEventIds] = useState<Set<string>>(new Set());
+  const { patients, eventsByPatient, loading, error, usingBackend } = useClinicalHistory(userToken);
 
   function toggleEvent(id: string) {
     setOpenEventIds((prev) => {
@@ -545,8 +714,11 @@ function DoctorHistorial() {
     console.log("[PLACEHOLDER] Exportar CSV — GET /crises/patients/{patientId}/analysis?format=csv");
   }
 
-  // PLACEHOLDER: events from GET /crises/patients/{patientId}/analysis
-  const events = PLACEHOLDER_CRISIS_EVENTS;
+  const events = selectedPatientId
+    ? usingBackend
+      ? eventsByPatient[selectedPatientId] ?? []
+      : PLACEHOLDER_CRISIS_EVENTS
+    : [];
 
   return (
     <div className="space-y-6">
@@ -555,9 +727,8 @@ function DoctorHistorial() {
       {/* Patient selector */}
       <div>
         <p className="mb-2 text-xs font-medium text-gray-500">Seleccionar paciente</p>
-        {/* PLACEHOLDER: patients from GET /doctor/patients */}
         <div className="flex flex-wrap gap-2">
-          {PLACEHOLDER_CLINICAL_PATIENTS.map((p) => {
+          {patients.map((p) => {
             const isSelected = selectedPatientId === p.id;
             return (
               <button
@@ -576,6 +747,8 @@ function DoctorHistorial() {
             );
           })}
         </div>
+        {loading && <p className="mt-2 text-xs text-gray-400">Cargando historial clinico real...</p>}
+        {error && <p className="mt-2 text-xs font-medium" style={{ color: "#991B1B" }}>{error}</p>}
       </div>
 
       {selectedPatientId === null ? (
@@ -694,7 +867,7 @@ export default function HistorialView({
 }) {
   if (role === "PATIENT" || role === "USER_PERSONAL")
     return <PatientHistorial userToken={userToken} refreshKey={refreshKey} />;
-  if (role === "CAREGIVER") return <CaregiverHistorial />;
-  if (role === "DOCTOR") return <DoctorHistorial />;
+  if (role === "CAREGIVER") return <CaregiverHistorial userToken={userToken} />;
+  if (role === "DOCTOR") return <DoctorHistorial userToken={userToken} />;
   return null;
 }
