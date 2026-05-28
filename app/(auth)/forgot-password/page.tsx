@@ -3,8 +3,9 @@
 import { useState, FormEvent, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { getApiBaseUrl } from "@/lib/api";
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "https://neurolive-backend.azurewebsites.net").replace(/\/$/, "");
+const API_BASE = getApiBaseUrl();
 
 const ERROR_MESSAGES: Record<number, string> = {
   400: "El correo ingresado no es válido.",

@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-
-const BACKEND_URL = "https://neurolive-backend.azurewebsites.net";
+import { useEffect, useState } from "react";
+import { NeuroLiveApiError, getPatientCrises } from "@/lib/clinical-api";
 
 export interface CrisisEvent {
   id: string;
@@ -20,26 +19,29 @@ interface UseCrisisHistoryResult {
 }
 
 function formatDate(raw: unknown): string {
-  if (!raw) return "—";
-  const d = new Date(String(raw));
-  if (isNaN(d.getTime())) return String(raw);
-  return d.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" });
+  if (!raw) return "-";
+  const date = new Date(String(raw));
+  if (Number.isNaN(date.getTime())) return String(raw);
+  return date.toLocaleDateString("es-CO", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function formatDuration(raw: unknown): string {
-  if (raw == null) return "—";
+  if (raw == null) return "-";
   if (typeof raw === "string" && !/^\d+$/.test(raw)) return raw;
-  const secs = Number(raw);
-  if (isNaN(secs)) return String(raw);
-  const m = Math.floor(secs / 60);
-  const s = secs % 60;
-  return m > 0 ? `${m} min ${s} s` : `${s} s`;
+  const seconds = Number(raw);
+  if (Number.isNaN(seconds)) return String(raw);
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return minutes > 0 ? `${minutes} min ${rest} s` : `${rest} s`;
 }
 
-export function useCrisisHistory(
-  patientId: number | null,
-  userToken?: string
-): UseCrisisHistoryResult {
+function clampSam(raw: unknown): number {
+  const value = Number(raw ?? 3);
+  if (Number.isNaN(value)) return 3;
+  return Math.min(5, Math.max(1, value));
+}
+
+export function useCrisisHistory(patientId: number | null, userToken?: string): UseCrisisHistoryResult {
   const [events, setEvents] = useState<CrisisEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,51 +55,41 @@ export function useCrisisHistory(
     }
 
     let cancelled = false;
-    setLoading(true);
-    setError(null);
+    const token = userToken;
+    const resolvedPatientId = patientId;
 
-    fetch(`${BACKEND_URL}/crises/patients/${patientId}`, {
-      headers: { Authorization: `Bearer ${userToken}` },
-    })
-      .then(async (res) => {
-        if (res.status === 404) return { list: [], error: null };
-        if (res.status === 403) return { list: [], error: "No tienes acceso al historial de este paciente" };
-        if (!res.ok) throw new Error(`Error ${res.status}`);
-        const data = await res.json();
-        const list: unknown[] = Array.isArray(data)
-          ? data
-          : Array.isArray((data as { content?: unknown[] }).content)
-          ? (data as { content: unknown[] }).content
-          : [];
-        return { list, error: null };
-      })
-      .then(({ list, error: fetchError }: { list: unknown[]; error: string | null }) => {
+    async function loadCrisisHistory() {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const page = await getPatientCrises(token, resolvedPatientId, 20);
         if (cancelled) return;
-        if (fetchError) {
-          setError(fetchError);
-          setEvents([]);
-          setLoading(false);
+        setEvents(
+          (page.content ?? []).map((event) => ({
+            id: String(event.id),
+            date: formatDate(event.startedAt),
+            duration: formatDuration(event.durationSeconds),
+            interventionType: event.interventionType ?? "-",
+            valence: clampSam(event.samValence),
+            arousal: clampSam(event.samArousal),
+          })),
+        );
+      } catch (caught) {
+        if (cancelled) return;
+        setEvents([]);
+        if (caught instanceof NeuroLiveApiError && caught.status === 404) return;
+        if (caught instanceof NeuroLiveApiError && caught.status === 403) {
+          setError("No tienes acceso al historial de este paciente");
           return;
         }
-        const mapped: CrisisEvent[] = list.map((item, idx) => {
-          const e = item as Record<string, unknown>;
-          return {
-            id: String(e.id ?? idx),
-            date: formatDate(e.startedAt),
-            duration: formatDuration(e.durationSeconds),
-            interventionType: String(e.interventionType ?? "—"),
-            valence: Math.min(5, Math.max(1, Number(e.samValence ?? 3))),
-            arousal: Math.min(5, Math.max(1, Number(e.samArousal ?? 3))),
-          };
-        });
-        setEvents(mapped);
-        setLoading(false);
-      })
-      .catch(() => {
-        if (cancelled) return;
         setError("No se pudo cargar el historial. Intenta de nuevo.");
-        setLoading(false);
-      });
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void loadCrisisHistory();
 
     return () => {
       cancelled = true;

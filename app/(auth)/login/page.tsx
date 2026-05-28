@@ -4,9 +4,10 @@ import { useState, FormEvent, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
+import { getApiBaseUrl } from "@/lib/api";
 import type { UserRole, LoginResponse } from "@/lib/types";
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "https://neurolive-backend.azurewebsites.net").replace(/\/$/, "");
+const API_BASE = getApiBaseUrl();
 
 const ERROR_MESSAGES: Record<number, string> = {
   401: "Correo o contraseña incorrectos.",

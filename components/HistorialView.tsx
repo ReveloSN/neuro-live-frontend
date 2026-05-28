@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useCrisisHistory } from "@/hooks/useCrisisHistory";
+import { getCurrentUserProfile, getMyLinks, getPatientCrises } from "@/lib/clinical-api";
+import type { CrisisEventResponse } from "@/lib/types";
 
 export type HistorialRole = "PATIENT" | "USER_PERSONAL" | "CAREGIVER" | "DOCTOR";
 
@@ -108,6 +109,181 @@ const PLACEHOLDER_SESSIONS: SessionRecord[] = [
   },
 ];
 
+// ─── PLACEHOLDER data — CAREGIVER / DOCTOR ────────────────────────────────────
+// Replace with: GET /crises/patients/{patientId}
+
+interface ClinicalPatient {
+  id: string;
+  linkId?: string;
+  name: string;
+  patientId: number;
+  fromBackend?: boolean;
+}
+
+interface CrisisEventRecord {
+  id: string;
+  date: string;
+  duration: string;
+  interventionType: string;
+  valence: number; // 1–5 SAM scale
+  arousal: number; // 1–5 SAM scale
+}
+
+type LinkedPatient = { id: number; patientId: number; linkType: string };
+
+// PLACEHOLDER: crisis events from GET /crises/patients/{patientId}
+const PLACEHOLDER_CRISIS_EVENTS: CrisisEventRecord[] = [
+  { id: "e1", date: "24 may 2026", duration: "4 min 30 s", interventionType: "Respiración guiada", valence: 2, arousal: 5 },
+  { id: "e2", date: "20 may 2026", duration: "2 min 15 s", interventionType: "Música ambiental",    valence: 3, arousal: 4 },
+  { id: "e3", date: "16 may 2026", duration: "6 min 10 s", interventionType: "Luz tenue",           valence: 2, arousal: 5 },
+  { id: "e4", date: "12 may 2026", duration: "1 min 50 s", interventionType: "Modo Calma",          valence: 4, arousal: 3 },
+];
+
+function formatBackendDate(value: string | null | undefined) {
+  if (!value) return "Sin fecha";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Sin fecha";
+  return parsed.toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function formatBackendDuration(seconds: number | null | undefined) {
+  if (seconds == null) return "Activa";
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return `${minutes} min ${rest} s`;
+}
+
+function formatBackendIntervention(value: string | null | undefined) {
+  if (!value) return "Sin intervención";
+  return value.replaceAll("_", " ").toLowerCase();
+}
+
+function clampSam(value: number | null | undefined) {
+  if (typeof value !== "number" || Number.isNaN(value)) return 3;
+  return Math.min(5, Math.max(1, value));
+}
+
+function mapBackendEvents(events: CrisisEventResponse[]): CrisisEventRecord[] {
+  return events.map((event) => ({
+    id: String(event.id),
+    date: formatBackendDate(event.startedAt),
+    duration: formatBackendDuration(event.durationSeconds),
+    interventionType: formatBackendIntervention(event.interventionType),
+    valence: clampSam(event.samValence),
+    arousal: clampSam(event.samArousal),
+  }));
+}
+
+function sessionStatusFromBackend(event: CrisisEventResponse): SessionStatus {
+  if (event.state === "ACTIVE_CRISIS" || event.emotionalState === "ACTIVE_CRISIS") return "Crisis";
+  if (event.state === "RISK_ELEVATED" || event.emotionalState === "RISK_ELEVATED") return "Riesgo";
+  return "Normal";
+}
+
+function mapBackendSessions(events: CrisisEventResponse[]): SessionRecord[] {
+  return events.map((event) => {
+    const status = sessionStatusFromBackend(event);
+    return {
+      id: String(event.id),
+      date: formatBackendDate(event.startedAt),
+      duration: formatBackendDuration(event.durationSeconds),
+      status,
+      crisisDuration: status === "Normal" ? undefined : formatBackendDuration(event.durationSeconds),
+      interventionType: formatBackendIntervention(event.interventionType),
+      sam: {
+        valence: clampSam(event.samValence),
+        arousal: clampSam(event.samArousal),
+        dominance: 3,
+      },
+    };
+  });
+}
+
+function useClinicalHistory(userToken?: string, linkedPatients?: LinkedPatient[]) {
+  const [patients, setPatients] = useState<ClinicalPatient[]>([]);
+  const [eventsByPatient, setEventsByPatient] = useState<Record<string, CrisisEventRecord[]>>({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [usingBackend, setUsingBackend] = useState(false);
+
+  useEffect(() => {
+    if (!userToken) {
+      setPatients([]);
+      setEventsByPatient({});
+      setUsingBackend(false);
+      return;
+    }
+
+    let active = true;
+    const token = userToken;
+
+    async function loadHistory() {
+      setLoading(true);
+      setError(null);
+      try {
+        const activeLinks =
+          linkedPatients ??
+          (await getMyLinks(token))
+            .filter((link) => link.status === "ACTIVE" && link.patientId != null)
+            .map((link) => ({
+              id: link.id,
+              patientId: link.patientId as number,
+              linkType: link.linkType ?? "",
+            }));
+
+        if (activeLinks.length === 0) {
+          if (!active) return;
+          setPatients([]);
+          setEventsByPatient({});
+          setUsingBackend(true);
+          return;
+        }
+
+        // Carga pacientes reales vinculados y evita mostrar eventos de ejemplo si hay datos reales.
+        const realPatients: ClinicalPatient[] = activeLinks.map((link) => ({
+          id: String(link.patientId),
+          linkId: String(link.id),
+          patientId: link.patientId,
+          name: `Paciente #${link.patientId}`,
+          fromBackend: true,
+        }));
+
+        const entries = await Promise.all(
+          realPatients.map(async (patient) => {
+            try {
+              const page = await getPatientCrises(token, patient.patientId as number, 20);
+              return [patient.id, mapBackendEvents(page.content ?? [])] as const;
+            } catch {
+              return [patient.id, []] as const;
+            }
+          }),
+        );
+
+        if (!active) return;
+        setPatients(realPatients);
+        setEventsByPatient(Object.fromEntries(entries));
+        setUsingBackend(true);
+      } catch {
+        if (!active) return;
+        setPatients([]);
+        setEventsByPatient({});
+        setUsingBackend(false);
+        setError("No se pudo cargar el historial clinico real.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    void loadHistory();
+
+    return () => {
+      active = false;
+    };
+  }, [userToken, linkedPatients]);
+
+  return { patients, eventsByPatient, loading, error, usingBackend };
+}
+
 // ─── Shared sub-components ─────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: SessionStatus }) {
@@ -193,28 +369,6 @@ function EmptyState({ message }: { message: string }) {
   );
 }
 
-function LoadingSpinner() {
-  return (
-    <div className="flex items-center justify-center py-16">
-      <svg className="h-8 w-8 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="#4A7FA5" strokeWidth="4" />
-        <path className="opacity-75" fill="#4A7FA5" d="M4 12a8 8 0 018-8v8H4z" />
-      </svg>
-    </div>
-  );
-}
-
-function ErrorBanner({ message }: { message: string }) {
-  return (
-    <div
-      className="rounded-xl px-4 py-3 text-sm"
-      style={{ backgroundColor: "#FEE2E2", color: "#991B1B", border: "1px solid #FECACA" }}
-    >
-      {message}
-    </div>
-  );
-}
-
 // ─── Patient / Personal view ───────────────────────────────────────────────────
 
 function PatientHistorial({ userToken, refreshKey }: { userToken?: string; refreshKey?: number }) {
@@ -222,29 +376,59 @@ function PatientHistorial({ userToken, refreshKey }: { userToken?: string; refre
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
 
   useEffect(() => {
+    let active = true;
+
+    function loadLocalSessions() {
+      try {
+        const raw = localStorage.getItem(`nl_historial_${userToken}`);
+        if (!raw) { setSessions([]); return; }
+        const saved: LocalSavedSession[] = JSON.parse(raw);
+        if (saved.length === 0) { setSessions([]); return; }
+        setSessions(
+          saved.slice().reverse().map((ls): SessionRecord => ({
+            id: ls.id,
+            date: ls.date,
+            duration: ls.duration,
+            status: (ls.status as SessionStatus | undefined) ?? "Normal",
+            interventionType: ls.interventionType,
+            breathingCycles: ls.breathingCycles,
+            sam: { valence: ls.valence, arousal: ls.arousal, dominance: ls.dominance },
+          }))
+        );
+      } catch {
+        setSessions([]);
+      }
+    }
+
     if (!userToken) {
       setSessions(PLACEHOLDER_SESSIONS);
       return;
     }
-    try {
-      const raw = localStorage.getItem(`nl_historial_${userToken}`);
-      if (!raw) { setSessions([]); return; }
-      const saved: LocalSavedSession[] = JSON.parse(raw);
-      if (saved.length === 0) { setSessions([]); return; }
-      setSessions(
-        saved.slice().reverse().map((ls): SessionRecord => ({
-          id: ls.id,
-          date: ls.date,
-          duration: ls.duration,
-          status: (ls.status as SessionStatus | undefined) ?? "Normal",
-          interventionType: ls.interventionType,
-          breathingCycles: ls.breathingCycles,
-          sam: { valence: ls.valence, arousal: ls.arousal, dominance: ls.dominance },
-        }))
-      );
-    } catch {
-      setSessions([]);
+
+    const token = userToken;
+
+    async function loadBackendSessions() {
+      try {
+        const profile = await getCurrentUserProfile(token);
+        const page = await getPatientCrises(token, profile.id, 20);
+        if (!active) return;
+        const backendSessions = mapBackendSessions(page.content ?? []);
+        if (backendSessions.length > 0) {
+          setSessions(backendSessions);
+          return;
+        }
+        loadLocalSessions();
+      } catch {
+        if (active) loadLocalSessions();
+      }
     }
+
+    // Prefiere crisis reales del backend; localStorage queda como respaldo de sesiones de calma.
+    void loadBackendSessions();
+
+    return () => {
+      active = false;
+    };
   }, [userToken, refreshKey]);
 
   function toggle(id: string) {
@@ -368,21 +552,12 @@ function CaregiverHistorial({
   linkedPatients,
   userToken,
 }: {
-  linkedPatients?: Array<{ id: number; patientId: number; linkType: string }>;
+  linkedPatients?: LinkedPatient[];
   userToken?: string;
 }) {
-  const clinicalPatients = (linkedPatients ?? []).map((lp) => ({
-    linkId: String(lp.id),
-    patientId: lp.patientId,
-    name: `Paciente ${lp.patientId}`,
-  }));
-  const [selectedLinkId, setSelectedLinkId] = useState<string | null>(null);
+  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [openEventIds, setOpenEventIds] = useState<Set<string>>(new Set());
-
-  const selectedPatientId =
-    clinicalPatients.find((p) => p.linkId === selectedLinkId)?.patientId ?? null;
-
-  const { events, loading, error } = useCrisisHistory(selectedPatientId, userToken);
+  const { patients, eventsByPatient, loading, error, usingBackend } = useClinicalHistory(userToken, linkedPatients);
 
   function toggleEvent(id: string) {
     setOpenEventIds((prev) => {
@@ -392,14 +567,16 @@ function CaregiverHistorial({
     });
   }
 
-  if (clinicalPatients.length === 0) {
-    return (
-      <div className="space-y-5">
-        <h1 className="text-2xl font-bold text-gray-900">Historial de mis pacientes</h1>
-        <EmptyState message="No tienes pacientes vinculados aún" />
-      </div>
-    );
+  function handleExportCSV() {
+    // PLACEHOLDER: replace with GET /crises/patients/{patientId}?format=csv
+    console.log("[PLACEHOLDER] Exportar CSV — GET /crises/patients/{patientId}?format=csv");
   }
+
+  const events = selectedPatientId
+    ? usingBackend
+      ? eventsByPatient[selectedPatientId] ?? []
+      : PLACEHOLDER_CRISIS_EVENTS
+    : [];
 
   return (
     <div className="space-y-6">
@@ -409,12 +586,12 @@ function CaregiverHistorial({
       <div>
         <p className="mb-2 text-xs font-medium text-gray-500">Seleccionar paciente</p>
         <div className="flex flex-wrap gap-2">
-          {clinicalPatients.map((p) => {
-            const isSelected = selectedLinkId === p.linkId;
+          {patients.map((p) => {
+            const isSelected = selectedPatientId === p.id;
             return (
               <button
-                key={p.linkId}
-                onClick={() => setSelectedLinkId(isSelected ? null : p.linkId)}
+                key={p.id}
+                onClick={() => setSelectedPatientId(isSelected ? null : p.id)}
                 aria-pressed={isSelected}
                 className="rounded-xl px-4 py-2 text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
                 style={{
@@ -428,16 +605,19 @@ function CaregiverHistorial({
             );
           })}
         </div>
+        {loading && <p className="mt-2 text-xs text-gray-400">Cargando historial real...</p>}
+        {error && <p className="mt-2 text-xs font-medium" style={{ color: "#991B1B" }}>{error}</p>}
+        {!loading && !error && patients.length === 0 && (
+          <p className="mt-2 text-sm text-gray-500">No tienes pacientes vinculados aún.</p>
+        )}
       </div>
 
-      {selectedLinkId === null ? (
+      {patients.length === 0 ? (
+        <EmptyState message="No tienes pacientes vinculados aún" />
+      ) : selectedPatientId === null ? (
         <EmptyState message="Selecciona un paciente para ver su historial" />
-      ) : loading ? (
-        <LoadingSpinner />
-      ) : error ? (
-        <ErrorBanner message={error} />
       ) : events.length === 0 ? (
-        <EmptyState message="No hay eventos registrados aún para este paciente" />
+        <EmptyState message="No hay eventos registrados para este paciente" />
       ) : (
         <>
           {/* Crisis events */}
@@ -461,6 +641,7 @@ function CaregiverHistorial({
 
                     {/* SAM mini progress bars */}
                     <div className="flex-1 min-w-[180px] max-w-[260px] space-y-1.5">
+                      {/* PLACEHOLDER: SAM scores from GET /crises/patients/{patientId} */}
                       <SAMProgressBar label="Valencia"   value={ev.valence} color="#4A7FA5" />
                       <SAMProgressBar label="Activación" value={ev.arousal} color="#F59E0B" />
                     </div>
@@ -500,6 +681,7 @@ function CaregiverHistorial({
                       <div>
                         <p className="mb-2 text-xs font-semibold text-gray-500">Escala SAM</p>
                         <div className="flex gap-2">
+                          {/* PLACEHOLDER: SAM scores from GET /crises/patients/{patientId} */}
                           <SAMCard label="Valencia"   options={SAM_VALENCE} score={ev.valence} />
                           <SAMCard label="Activación" options={SAM_AROUSAL} score={ev.arousal} />
                         </div>
@@ -510,6 +692,25 @@ function CaregiverHistorial({
               );
             })}
           </ul>
+
+          {/* Export CSV button — visual only */}
+          <div className="flex justify-end">
+            {/* PLACEHOLDER: replace with GET /crises/patients/{patientId}?format=csv */}
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
+              style={{
+                backgroundColor: "#D6E8F5",
+                color: "#2d5a7a",
+                border: "1.5px solid #4A7FA5",
+              }}
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              Exportar CSV
+            </button>
+          </div>
         </>
       )}
     </div>
@@ -522,21 +723,12 @@ function DoctorHistorial({
   linkedPatients,
   userToken,
 }: {
-  linkedPatients?: Array<{ id: number; patientId: number; linkType: string }>;
+  linkedPatients?: LinkedPatient[];
   userToken?: string;
 }) {
-  const clinicalPatients = (linkedPatients ?? []).map((lp) => ({
-    linkId: String(lp.id),
-    patientId: lp.patientId,
-    name: `Paciente ${lp.patientId}`,
-  }));
-  const [selectedLinkId, setSelectedLinkId] = useState<string | null>(null);
+  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [openEventIds, setOpenEventIds] = useState<Set<string>>(new Set());
-
-  const selectedPatientId =
-    clinicalPatients.find((p) => p.linkId === selectedLinkId)?.patientId ?? null;
-
-  const { events, loading, error } = useCrisisHistory(selectedPatientId, userToken);
+  const { patients, eventsByPatient, loading, error, usingBackend } = useClinicalHistory(userToken, linkedPatients);
 
   function toggleEvent(id: string) {
     setOpenEventIds((prev) => {
@@ -546,14 +738,16 @@ function DoctorHistorial({
     });
   }
 
-  if (clinicalPatients.length === 0) {
-    return (
-      <div className="space-y-5">
-        <h1 className="text-2xl font-bold text-gray-900">Historial clínico</h1>
-        <EmptyState message="No tienes pacientes vinculados aún" />
-      </div>
-    );
+  function handleExportCSV() {
+    // PLACEHOLDER: replace with GET /crises/patients/{patientId}/analysis?format=csv
+    console.log("[PLACEHOLDER] Exportar CSV — GET /crises/patients/{patientId}/analysis?format=csv");
   }
+
+  const events = selectedPatientId
+    ? usingBackend
+      ? eventsByPatient[selectedPatientId] ?? []
+      : PLACEHOLDER_CRISIS_EVENTS
+    : [];
 
   return (
     <div className="space-y-6">
@@ -563,12 +757,12 @@ function DoctorHistorial({
       <div>
         <p className="mb-2 text-xs font-medium text-gray-500">Seleccionar paciente</p>
         <div className="flex flex-wrap gap-2">
-          {clinicalPatients.map((p) => {
-            const isSelected = selectedLinkId === p.linkId;
+          {patients.map((p) => {
+            const isSelected = selectedPatientId === p.id;
             return (
               <button
-                key={p.linkId}
-                onClick={() => setSelectedLinkId(isSelected ? null : p.linkId)}
+                key={p.id}
+                onClick={() => setSelectedPatientId(isSelected ? null : p.id)}
                 aria-pressed={isSelected}
                 className="rounded-xl px-4 py-2 text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
                 style={{
@@ -582,16 +776,19 @@ function DoctorHistorial({
             );
           })}
         </div>
+        {loading && <p className="mt-2 text-xs text-gray-400">Cargando historial clinico real...</p>}
+        {error && <p className="mt-2 text-xs font-medium" style={{ color: "#991B1B" }}>{error}</p>}
+        {!loading && !error && patients.length === 0 && (
+          <p className="mt-2 text-sm text-gray-500">No tienes pacientes vinculados aún.</p>
+        )}
       </div>
 
-      {selectedLinkId === null ? (
+      {patients.length === 0 ? (
+        <EmptyState message="No tienes pacientes vinculados aún" />
+      ) : selectedPatientId === null ? (
         <EmptyState message="Selecciona un paciente para ver su historial clínico" />
-      ) : loading ? (
-        <LoadingSpinner />
-      ) : error ? (
-        <ErrorBanner message={error} />
       ) : events.length === 0 ? (
-        <EmptyState message="No hay eventos de crisis registrados aún" />
+        <EmptyState message="No hay eventos registrados para este paciente" />
       ) : (
         <>
           {/* Crisis events */}
@@ -615,6 +812,7 @@ function DoctorHistorial({
 
                     {/* SAM mini progress bars */}
                     <div className="flex-1 min-w-[180px] max-w-[260px] space-y-1.5">
+                      {/* PLACEHOLDER: SAM scores from GET /crises/patients/{patientId}/analysis */}
                       <SAMProgressBar label="Valencia"   value={ev.valence} color="#4A7FA5" />
                       <SAMProgressBar label="Activación" value={ev.arousal} color="#F59E0B" />
                     </div>
@@ -654,6 +852,7 @@ function DoctorHistorial({
                       <div>
                         <p className="mb-2 text-xs font-semibold text-gray-500">Escala SAM</p>
                         <div className="flex gap-2">
+                          {/* PLACEHOLDER: SAM scores from GET /crises/patients/{patientId}/analysis */}
                           <SAMCard label="Valencia"   options={SAM_VALENCE} score={ev.valence} />
                           <SAMCard label="Activación" options={SAM_AROUSAL} score={ev.arousal} />
                         </div>
@@ -664,6 +863,25 @@ function DoctorHistorial({
               );
             })}
           </ul>
+
+          {/* Export CSV button — visual only */}
+          <div className="flex justify-end">
+            {/* PLACEHOLDER: replace with GET /crises/patients/{patientId}/analysis?format=csv */}
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
+              style={{
+                backgroundColor: "#D6E8F5",
+                color: "#2d5a7a",
+                border: "1.5px solid #4A7FA5",
+              }}
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              Exportar CSV
+            </button>
+          </div>
         </>
       )}
     </div>
@@ -681,13 +899,11 @@ export default function HistorialView({
   role: HistorialRole;
   userToken?: string;
   refreshKey?: number;
-  linkedPatients?: Array<{ id: number; patientId: number; linkType: string }>;
+  linkedPatients?: LinkedPatient[];
 }) {
   if (role === "PATIENT" || role === "USER_PERSONAL")
     return <PatientHistorial userToken={userToken} refreshKey={refreshKey} />;
-  if (role === "CAREGIVER")
-    return <CaregiverHistorial linkedPatients={linkedPatients} userToken={userToken} />;
-  if (role === "DOCTOR")
-    return <DoctorHistorial linkedPatients={linkedPatients} userToken={userToken} />;
+  if (role === "CAREGIVER") return <CaregiverHistorial linkedPatients={linkedPatients} userToken={userToken} />;
+  if (role === "DOCTOR") return <DoctorHistorial linkedPatients={linkedPatients} userToken={userToken} />;
   return null;
 }
