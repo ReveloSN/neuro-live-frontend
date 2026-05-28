@@ -79,6 +79,18 @@ function ProgressBar({ value, color }: { value: number; color: string }) {
   );
 }
 
+function getBarColor(pct: number): string {
+  if (pct <= 40) return "#4ADE80";
+  if (pct <= 70) return "#F59E0B";
+  return "#EF4444";
+}
+
+function getBarLabel(pct: number): string {
+  if (pct <= 40) return "Normal";
+  if (pct <= 70) return "Atención";
+  return "Alerta";
+}
+
 export default function PatientDashboardPage() {
   const { user, loading, logout } = useAuth();
   const router = useRouter();
@@ -341,21 +353,27 @@ export default function PatientDashboardPage() {
               <div>
                 <div className="mb-1.5 flex items-center justify-between text-xs">
                   <span className="text-gray-500">Dwell Time</span>
-                  <span className="font-semibold" style={{ color: "#4A7FA5" }}>
+                  <span className="font-semibold" style={{ color: getBarColor(dwellTimePct) }}>
                     {Math.round(dwellTimePct)}%
                   </span>
                 </div>
-                <ProgressBar value={dwellTimePct} color="#4A7FA5" />
+                <ProgressBar value={dwellTimePct} color={getBarColor(dwellTimePct)} />
+                <span className="mt-1 block text-xs font-medium" style={{ color: getBarColor(dwellTimePct) }}>
+                  {getBarLabel(dwellTimePct)}
+                </span>
               </div>
 
               <div>
                 <div className="mb-1.5 flex items-center justify-between text-xs">
                   <span className="text-gray-500">Flight Time</span>
-                  <span className="font-semibold" style={{ color: "#34D399" }}>
+                  <span className="font-semibold" style={{ color: getBarColor(flightTimePct) }}>
                     {Math.round(flightTimePct)}%
                   </span>
                 </div>
-                <ProgressBar value={flightTimePct} color="#34D399" />
+                <ProgressBar value={flightTimePct} color={getBarColor(flightTimePct)} />
+                <span className="mt-1 block text-xs font-medium" style={{ color: getBarColor(flightTimePct) }}>
+                  {getBarLabel(flightTimePct)}
+                </span>
               </div>
             </div>
           </div>
