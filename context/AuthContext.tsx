@@ -7,14 +7,38 @@ const SESSION_KEY_TOKEN = "nl_token";
 const SESSION_KEY_ROLE = "nl_role";
 const SESSION_KEY_NAME = "nl_name";
 
-// Middleware runs on the Edge and cannot read sessionStorage, so we mirror
-// nl_token and nl_role into session cookies (no max-age → expire with tab).
+// Middleware runs on the Edge and cannot read sessionStorage. The tab storage
+// is the source of truth; cookies only let middleware route the active tab.
 function setSessionCookie(name: string, value: string) {
   document.cookie = `${name}=${encodeURIComponent(value)}; path=/; SameSite=Strict`;
 }
 
 function clearSessionCookie(name: string) {
   document.cookie = `${name}=; path=/; max-age=0; SameSite=Strict`;
+}
+
+function readSessionStorage(name: string) {
+  try {
+    return sessionStorage.getItem(name);
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionStorage(name: string, value: string) {
+  try {
+    sessionStorage.setItem(name, value);
+  } catch {
+    // sessionStorage unavailable; cookies still keep middleware and client aligned.
+  }
+}
+
+function removeSessionStorage(name: string) {
+  try {
+    sessionStorage.removeItem(name);
+  } catch {
+    // ignore
+  }
 }
 
 const VALID_ROLES: UserRole[] = ["USER_PERSONAL", "PATIENT", "CAREGIVER", "DOCTOR"];
@@ -41,46 +65,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Restore session from sessionStorage on page refresh
+  // Restore only from tab storage. If it is missing, clear stale middleware cookies
+  // so protected routes can redirect to /login instead of looping on a loader.
   useEffect(() => {
-    try {
-      const token = sessionStorage.getItem(SESSION_KEY_TOKEN);
-      const role = sessionStorage.getItem(SESSION_KEY_ROLE);
-      const name = sessionStorage.getItem(SESSION_KEY_NAME);
+    const token = readSessionStorage(SESSION_KEY_TOKEN);
+    const role = readSessionStorage(SESSION_KEY_ROLE);
+    const name = readSessionStorage(SESSION_KEY_NAME);
 
-      if (token && isValidRole(role) && name) {
-        setUser({ token, role, name });
-      }
-    } catch {
-      // sessionStorage unavailable (e.g. private-browsing SecurityError) — start unauthenticated
-    } finally {
-      setLoading(false);
+    if (token && isValidRole(role) && name) {
+      setSessionCookie(SESSION_KEY_TOKEN, token);
+      setSessionCookie(SESSION_KEY_ROLE, role);
+      setSessionCookie(SESSION_KEY_NAME, name);
+
+      setUser({ token, role, name });
+    } else {
+      clearSessionCookie(SESSION_KEY_TOKEN);
+      clearSessionCookie(SESSION_KEY_ROLE);
+      clearSessionCookie(SESSION_KEY_NAME);
     }
+
+    setLoading(false);
   }, []);
 
   function login(token: string, role: UserRole, name: string) {
-    try {
-      sessionStorage.setItem(SESSION_KEY_TOKEN, token);
-      sessionStorage.setItem(SESSION_KEY_ROLE, role);
-      sessionStorage.setItem(SESSION_KEY_NAME, name);
-      setSessionCookie(SESSION_KEY_TOKEN, token);
-      setSessionCookie(SESSION_KEY_ROLE, role);
-    } catch {
-      // sessionStorage unavailable — session will not survive a refresh
-    }
+    writeSessionStorage(SESSION_KEY_TOKEN, token);
+    writeSessionStorage(SESSION_KEY_ROLE, role);
+    writeSessionStorage(SESSION_KEY_NAME, name);
+    setSessionCookie(SESSION_KEY_TOKEN, token);
+    setSessionCookie(SESSION_KEY_ROLE, role);
+    setSessionCookie(SESSION_KEY_NAME, name);
     setUser({ token, role, name });
   }
 
   function logout() {
-    try {
-      sessionStorage.removeItem(SESSION_KEY_TOKEN);
-      sessionStorage.removeItem(SESSION_KEY_ROLE);
-      sessionStorage.removeItem(SESSION_KEY_NAME);
-      clearSessionCookie(SESSION_KEY_TOKEN);
-      clearSessionCookie(SESSION_KEY_ROLE);
-    } catch {
-      // ignore
-    }
+    removeSessionStorage(SESSION_KEY_TOKEN);
+    removeSessionStorage(SESSION_KEY_ROLE);
+    removeSessionStorage(SESSION_KEY_NAME);
+    clearSessionCookie(SESSION_KEY_TOKEN);
+    clearSessionCookie(SESSION_KEY_ROLE);
+    clearSessionCookie(SESSION_KEY_NAME);
     setUser(null);
   }
 
