@@ -1,0 +1,570 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
+import type { UserRole } from "@/lib/types";
+
+export type ConfiguracionRole = UserRole;
+
+const ROLE_LABELS: Record<ConfiguracionRole, string> = {
+  USER_PERSONAL: "Usuario Personal",
+  PATIENT: "Paciente",
+  CAREGIVER: "Cuidador",
+  DOCTOR: "Médico",
+};
+
+// PLACEHOLDER: patient list from GET /doctor/patients
+const PLACEHOLDER_PATIENTS = [
+  { id: "p1", name: "María González" },
+  { id: "p2", name: "Carlos Ruiz" },
+  { id: "p3", name: "Ana Martínez" },
+];
+
+const API_BASE = "https://neurolive-backend.azurewebsites.net";
+
+interface UserProfile {
+  id: string;
+  email: string;
+  name: string;
+}
+
+interface ThresholdValues {
+  bpmMin: number;
+  bpmMax: number;
+  spo2Min: number;
+}
+
+const DEFAULT_THRESHOLDS: ThresholdValues = { bpmMin: 60, bpmMax: 100, spo2Min: 95 };
+
+const THRESH_RULES = {
+  bpmMin:  { min: 30,  max: 100 },
+  bpmMax:  { min: 60,  max: 220 },
+  spo2Min: { min: 70,  max: 100 },
+} as const;
+
+function initialThresholds(): Record<string, ThresholdValues> {
+  return Object.fromEntries(
+    PLACEHOLDER_PATIENTS.map((p) => [p.id, { ...DEFAULT_THRESHOLDS }])
+  );
+}
+
+export default function ConfiguracionView({
+  role,
+  user,
+  token,
+}: {
+  role: ConfiguracionRole;
+  user: { name: string; token: string };
+  token: string;
+}) {
+  const router = useRouter();
+  const { login } = useAuth();
+
+  // ── Profile state ──────────────────────────────────────────────────────────
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [editingName, setEditingName] = useState(false);
+  const [nameValue, setNameValue] = useState(user.name);
+  const [savingName, setSavingName] = useState(false);
+  const [nameMsg, setNameMsg] = useState<{ text: string; ok: boolean } | null>(null);
+
+  // ── Biometric consent state (PATIENT only) ─────────────────────────────────
+  const [consentOn, setConsentOn] = useState(false);
+  const [consentDate, setConsentDate] = useState<string | null>(null);
+  const [savingConsent, setSavingConsent] = useState(false);
+
+  // ── Clinical thresholds state (DOCTOR only) ────────────────────────────────
+  const [threshPatientId, setThreshPatientId] = useState<string | null>(null);
+  const [thresholds, setThresholds] = useState<Record<string, ThresholdValues>>(initialThresholds);
+  const [threshSaved, setThreshSaved] = useState(false);
+
+  useEffect(() => {
+    async function fetchProfile() {
+      try {
+        const res = await fetch(`${API_BASE}/users/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const fetched: UserProfile = {
+          id: data.id ?? data.userId ?? "",
+          email: data.email ?? "",
+          name: data.name ?? user.name,
+        };
+        setProfile(fetched);
+        setNameValue(fetched.name);
+      } catch {
+        // non-fatal — falls back to user prop
+      }
+    }
+    fetchProfile();
+  }, [token, user.name]);
+
+  // Load per-patient thresholds from localStorage on mount (DOCTOR only)
+  useEffect(() => {
+    if (role !== "DOCTOR") return;
+    setThresholds((prev) => {
+      const updated = { ...prev };
+      for (const p of PLACEHOLDER_PATIENTS) {
+        try {
+          const raw = localStorage.getItem(`nl_thresholds_${p.name}`);
+          if (!raw) continue;
+          const parsed = JSON.parse(raw) as Partial<ThresholdValues>;
+          if (
+            typeof parsed.bpmMin === "number" &&
+            typeof parsed.bpmMax === "number" &&
+            typeof parsed.spo2Min === "number"
+          ) {
+            updated[p.id] = parsed as ThresholdValues;
+          }
+        } catch {
+          // ignore malformed entries
+        }
+      }
+      return updated;
+    });
+  }, [role]);
+
+  async function handleSaveName() {
+    const trimmed = nameValue.trim();
+    if (!trimmed) return;
+    setSavingName(true);
+    try {
+      const res = await fetch(`${API_BASE}/users/me`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      if (!res.ok) throw new Error();
+      setProfile((p) => (p ? { ...p, name: trimmed } : p));
+      login(token, role, trimmed); // refreshes auth context so the header avatar updates
+      setEditingName(false);
+      setNameMsg({ text: "Nombre actualizado correctamente", ok: true });
+      setTimeout(() => setNameMsg(null), 3000);
+    } catch {
+      setNameMsg({ text: "No se pudo actualizar el nombre. Inténtalo de nuevo.", ok: false });
+    } finally {
+      setSavingName(false);
+    }
+  }
+
+  async function handleConsentToggle() {
+    const next = !consentOn;
+    setConsentOn(next);
+    if (!next) {
+      setConsentDate(null);
+      return;
+    }
+    const patientId = profile?.id;
+    if (!patientId) return;
+    setSavingConsent(true);
+    try {
+      // PLACEHOLDER: POST /biometrics/patients/{patientId}/consent
+      await fetch(`${API_BASE}/biometrics/patients/${patientId}/consent`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const now = new Date();
+      setConsentDate(
+        now.toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })
+      );
+    } catch {
+      setConsentOn(false);
+    } finally {
+      setSavingConsent(false);
+    }
+  }
+
+  function updateThreshold(field: keyof ThresholdValues, value: number) {
+    if (!threshPatientId) return;
+    setThresholds((prev) => ({
+      ...prev,
+      [threshPatientId]: { ...(prev[threshPatientId] ?? DEFAULT_THRESHOLDS), [field]: value },
+    }));
+  }
+
+  function handleSaveThresholds() {
+    if (!threshPatientId) return;
+    const patient = PLACEHOLDER_PATIENTS.find((p) => p.id === threshPatientId);
+    const values = thresholds[threshPatientId] ?? DEFAULT_THRESHOLDS;
+    if (patient) {
+      try {
+        localStorage.setItem(`nl_thresholds_${patient.name}`, JSON.stringify(values));
+      } catch {
+        // localStorage unavailable — continue without persisting
+      }
+    }
+    // PLACEHOLDER: POST /biometrics/patients/{threshPatientId}/thresholds
+    //   body: values
+    setThreshSaved(true);
+    setTimeout(() => setThreshSaved(false), 2000);
+  }
+
+  const displayName = profile?.name ?? user.name;
+  const displayEmail = profile?.email ?? "";
+
+  // Per-patient threshold values and validation
+  const currentThresh = threshPatientId
+    ? (thresholds[threshPatientId] ?? DEFAULT_THRESHOLDS)
+    : DEFAULT_THRESHOLDS;
+
+  const threshErrors = {
+    bpmMin:
+      currentThresh.bpmMin < THRESH_RULES.bpmMin.min ||
+      currentThresh.bpmMin > THRESH_RULES.bpmMin.max
+        ? `${THRESH_RULES.bpmMin.min}–${THRESH_RULES.bpmMin.max}`
+        : null,
+    bpmMax:
+      currentThresh.bpmMax < THRESH_RULES.bpmMax.min ||
+      currentThresh.bpmMax > THRESH_RULES.bpmMax.max
+        ? `${THRESH_RULES.bpmMax.min}–${THRESH_RULES.bpmMax.max}`
+        : null,
+    spo2Min:
+      currentThresh.spo2Min < THRESH_RULES.spo2Min.min ||
+      currentThresh.spo2Min > THRESH_RULES.spo2Min.max
+        ? `${THRESH_RULES.spo2Min.min}–${THRESH_RULES.spo2Min.max}`
+        : null,
+  };
+  const threshHasError = Object.values(threshErrors).some(Boolean);
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-6">
+      <h1 className="text-2xl font-bold text-gray-900">Configuración</h1>
+
+      {/* ── Section 1: Mi perfil ─────────────────────────────────────────────── */}
+      <section
+        className="rounded-2xl p-6 space-y-5"
+        style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}
+        aria-labelledby="cfg-perfil-heading"
+      >
+        <h2 id="cfg-perfil-heading" className="text-sm font-semibold text-gray-700">
+          Mi perfil
+        </h2>
+
+        {/* Avatar + editable name */}
+        <div className="flex items-start gap-4">
+          <div
+            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-xl font-bold text-white select-none"
+            style={{ backgroundColor: "#4A7FA5" }}
+            aria-hidden="true"
+          >
+            {displayName.charAt(0).toUpperCase()}
+          </div>
+
+          <div className="flex-1 min-w-0 pt-1">
+            {editingName ? (
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={nameValue}
+                  onChange={(e) => setNameValue(e.target.value)}
+                  maxLength={100}
+                  className="w-full rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  style={{ border: "1.5px solid #D6E8F5", backgroundColor: "#FAFAFA" }}
+                  aria-label="Nombre completo"
+                  autoFocus
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleSaveName}
+                    disabled={savingName || !nameValue.trim()}
+                    className="rounded-lg px-4 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
+                    style={{ backgroundColor: "#4A7FA5" }}
+                  >
+                    {savingName ? "Guardando…" : "Guardar cambios"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditingName(false);
+                      setNameValue(displayName);
+                    }}
+                    className="rounded-lg px-4 py-1.5 text-xs font-medium text-gray-500 transition hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-semibold text-gray-800 truncate">{displayName}</p>
+                <button
+                  onClick={() => setEditingName(true)}
+                  className="shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
+                  style={{ color: "#4A7FA5" }}
+                  aria-label="Editar nombre"
+                >
+                  Editar
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Name save feedback */}
+        {nameMsg && (
+          <p
+            className="rounded-lg px-3 py-2 text-xs font-medium"
+            style={{
+              color: nameMsg.ok ? "#065F46" : "#991B1B",
+              backgroundColor: nameMsg.ok ? "#D1FAE5" : "#FEE2E2",
+            }}
+            role="status"
+          >
+            {nameMsg.text}
+          </p>
+        )}
+
+        {/* Email (read-only) */}
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-gray-500">Correo electrónico</p>
+          <div className="flex items-center gap-2">
+            <LockIcon />
+            <span className="text-sm text-gray-600">{displayEmail || "—"}</span>
+          </div>
+        </div>
+
+        {/* Role badge */}
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-gray-500">Rol</p>
+          <span
+            className="inline-block rounded-full px-3 py-0.5 text-xs font-semibold"
+            style={{ backgroundColor: "#D6E8F5", color: "#2d5a7a" }}
+          >
+            {ROLE_LABELS[role]}
+          </span>
+        </div>
+      </section>
+
+      {/* ── Section 2: Seguridad ─────────────────────────────────────────────── */}
+      <section
+        className="rounded-2xl p-6 space-y-4"
+        style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}
+        aria-labelledby="cfg-seguridad-heading"
+      >
+        <h2 id="cfg-seguridad-heading" className="text-sm font-semibold text-gray-700">
+          Seguridad
+        </h2>
+
+        <div>
+          <button
+            onClick={() => router.push("/forgot-password")}
+            className="rounded-xl px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
+            style={{ backgroundColor: "#4A7FA5" }}
+          >
+            Cambiar contraseña
+          </button>
+          <p className="mt-2 text-xs text-gray-400">
+            Recibirás un código en tu correo registrado
+          </p>
+        </div>
+      </section>
+
+      {/* ── Section 3 (PATIENT): Consentimiento biométrico ──────────────────── */}
+      {role === "PATIENT" && (
+        <section
+          className="rounded-2xl p-6 space-y-4"
+          style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}
+          aria-labelledby="cfg-consent-heading"
+        >
+          <h2 id="cfg-consent-heading" className="text-sm font-semibold text-gray-700">
+            Consentimiento biométrico
+          </h2>
+
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-sm text-gray-700">
+              Autorizo el procesamiento de mis datos biométricos
+            </span>
+            <button
+              role="switch"
+              aria-checked={consentOn}
+              onClick={handleConsentToggle}
+              disabled={savingConsent}
+              className="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1 disabled:opacity-50"
+              style={{ backgroundColor: consentOn ? "#4A7FA5" : "#D1D5DB" }}
+            >
+              <span className="sr-only">{consentOn ? "Activado" : "Desactivado"}</span>
+              <span
+                className="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
+                style={{ transform: consentOn ? "translateX(22px)" : "translateX(3px)" }}
+              />
+            </button>
+          </div>
+
+          <p className="text-xs text-gray-400">
+            {consentDate
+              ? `Consentimiento otorgado el ${consentDate}`
+              : "Sin consentimiento activo"}
+          </p>
+
+          <div
+            className="rounded-xl p-4 text-xs leading-relaxed"
+            style={{ backgroundColor: "#D6E8F5", color: "#2d5a7a" }}
+          >
+            Tus datos están cifrados y solo se usan para mejorar tu experiencia. Puedes revocar
+            este permiso en cualquier momento.
+          </div>
+        </section>
+      )}
+
+      {/* ── Section 3 (DOCTOR): Umbrales clínicos ───────────────────────────── */}
+      {role === "DOCTOR" && (
+        <section
+          className="rounded-2xl p-6 space-y-5"
+          style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}
+          aria-labelledby="cfg-thresholds-heading"
+        >
+          <h2 id="cfg-thresholds-heading" className="text-sm font-semibold text-gray-700">
+            Umbrales clínicos
+          </h2>
+
+          {/* Patient selector */}
+          <div>
+            <p className="mb-2 text-xs font-medium text-gray-500">Seleccionar paciente</p>
+            {/* PLACEHOLDER: patients from GET /doctor/patients */}
+            <div className="flex flex-wrap gap-2">
+              {PLACEHOLDER_PATIENTS.map((p) => {
+                const isSel = threshPatientId === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => setThreshPatientId(isSel ? null : p.id)}
+                    aria-pressed={isSel}
+                    className="rounded-xl px-4 py-2 text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
+                    style={{
+                      backgroundColor: isSel ? "#D6E8F5" : "#ffffff",
+                      border: `1.5px solid ${isSel ? "#4A7FA5" : "#E5E7EB"}`,
+                      color: isSel ? "#2d5a7a" : "#374151",
+                    }}
+                  >
+                    {p.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Threshold inputs — rendered only when a patient is selected */}
+          {threshPatientId && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-start gap-4">
+
+                {/* BPM Mínimo */}
+                <div>
+                  <label
+                    className="block text-xs font-medium text-gray-500 mb-1.5"
+                    htmlFor="cfg-bpmMin"
+                  >
+                    BPM Mínimo
+                  </label>
+                  <input
+                    id="cfg-bpmMin"
+                    type="number"
+                    value={currentThresh.bpmMin}
+                    onChange={(e) => updateThreshold("bpmMin", parseInt(e.target.value, 10) || 0)}
+                    className="w-24 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    style={{
+                      border: `1.5px solid ${threshErrors.bpmMin ? "#EF4444" : "#D6E8F5"}`,
+                      backgroundColor: "#FAFAFA",
+                    }}
+                    min={THRESH_RULES.bpmMin.min}
+                    max={THRESH_RULES.bpmMin.max}
+                  />
+                  {threshErrors.bpmMin && (
+                    <p className="mt-1 text-xs font-medium" style={{ color: "#EF4444" }}>
+                      Rango: {threshErrors.bpmMin}
+                    </p>
+                  )}
+                </div>
+
+                {/* BPM Máximo */}
+                <div>
+                  <label
+                    className="block text-xs font-medium text-gray-500 mb-1.5"
+                    htmlFor="cfg-bpmMax"
+                  >
+                    BPM Máximo
+                  </label>
+                  <input
+                    id="cfg-bpmMax"
+                    type="number"
+                    value={currentThresh.bpmMax}
+                    onChange={(e) => updateThreshold("bpmMax", parseInt(e.target.value, 10) || 0)}
+                    className="w-24 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    style={{
+                      border: `1.5px solid ${threshErrors.bpmMax ? "#EF4444" : "#D6E8F5"}`,
+                      backgroundColor: "#FAFAFA",
+                    }}
+                    min={THRESH_RULES.bpmMax.min}
+                    max={THRESH_RULES.bpmMax.max}
+                  />
+                  {threshErrors.bpmMax && (
+                    <p className="mt-1 text-xs font-medium" style={{ color: "#EF4444" }}>
+                      Rango: {threshErrors.bpmMax}
+                    </p>
+                  )}
+                </div>
+
+                {/* SpO2 Mínimo */}
+                <div>
+                  <label
+                    className="block text-xs font-medium text-gray-500 mb-1.5"
+                    htmlFor="cfg-spo2Min"
+                  >
+                    SpO2 Mínimo
+                  </label>
+                  <input
+                    id="cfg-spo2Min"
+                    type="number"
+                    value={currentThresh.spo2Min}
+                    onChange={(e) => updateThreshold("spo2Min", parseInt(e.target.value, 10) || 0)}
+                    className="w-24 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    style={{
+                      border: `1.5px solid ${threshErrors.spo2Min ? "#EF4444" : "#D6E8F5"}`,
+                      backgroundColor: "#FAFAFA",
+                    }}
+                    min={THRESH_RULES.spo2Min.min}
+                    max={THRESH_RULES.spo2Min.max}
+                  />
+                  {threshErrors.spo2Min && (
+                    <p className="mt-1 text-xs font-medium" style={{ color: "#EF4444" }}>
+                      Rango: {threshErrors.spo2Min}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* PLACEHOLDER: POST /biometrics/patients/{threshPatientId}/thresholds */}
+              <button
+                onClick={handleSaveThresholds}
+                disabled={threshHasError}
+                className="rounded-xl px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
+                style={{ backgroundColor: threshSaved ? "#22C55E" : "#4A7FA5" }}
+              >
+                {threshSaved ? "¡Guardado!" : "Guardar umbrales"}
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
+function LockIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className="h-4 w-4 shrink-0 text-gray-400"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      aria-hidden="true"
+    >
+      <rect x="3" y="7" width="10" height="7" rx="1.5" />
+      <path d="M5 7V5a3 3 0 016 0v2" strokeLinecap="round" />
+    </svg>
+  );
+}

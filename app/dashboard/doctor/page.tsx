@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import HistorialView from "@/components/HistorialView";
+import ConfiguracionView from "@/components/ConfiguracionView";
 
 // ---------------------------------------------------------------------------
 // PLACEHOLDER DATA — replace with GET /doctor/patients
@@ -181,11 +182,8 @@ export default function DoctorDashboardPage() {
   const DATE_FROM = "01/03/2026";
   const DATE_TO   = "30/03/2026";
 
-  // PLACEHOLDER thresholds — replace with GET /doctor/thresholds?patient={id}
-  const [bpmMin, setBpmMin]   = useState(60);
-  const [bpmMax, setBpmMax]   = useState(100);
-  const [spo2Min, setSpo2Min] = useState(95);
-  const [saved, setSaved]     = useState(false);
+  // Read-only thresholds for the selected patient — source of truth is localStorage
+  const [patientThresholds, setPatientThresholds] = useState({ bpmMin: 60, bpmMax: 100, spo2Min: 95 });
 
   function handleLogout() {
     logout();
@@ -197,12 +195,6 @@ export default function DoctorDashboardPage() {
     if (tab !== "Mis Pacientes") setSelectedPatient(null);
   }
 
-  function handleSaveThresholds() {
-    // PLACEHOLDER: replace with PATCH /doctor/thresholds { bpmMin, bpmMax, spo2Min }
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  }
-
   function handleExportCSV() {
     // PLACEHOLDER: replace with GET /patients/{id}/export?format=csv&from=&to=
     console.log("Exportar CSV — PLACEHOLDER");
@@ -211,6 +203,23 @@ export default function DoctorDashboardPage() {
   useEffect(() => {
     if (!loading && !user) router.push("/login");
   }, [loading, user, router]);
+
+  useEffect(() => {
+    if (!selectedPatient) return;
+    try {
+      const raw = localStorage.getItem(`nl_thresholds_${selectedPatient.name}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed.bpmMin === "number" && typeof parsed.bpmMax === "number" && typeof parsed.spo2Min === "number") {
+          setPatientThresholds(parsed);
+          return;
+        }
+      }
+    } catch {
+      // ignore malformed entries
+    }
+    setPatientThresholds({ bpmMin: 60, bpmMax: 100, spo2Min: 95 });
+  }, [selectedPatient]);
 
   if (loading || !user) {
     return (
@@ -384,7 +393,7 @@ export default function DoctorDashboardPage() {
                   />
                 </section>
 
-                {/* Activation thresholds */}
+                {/* Activation thresholds — read-only, configured in Configuración tab */}
                 <section
                   className="rounded-2xl p-5"
                   style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}
@@ -393,62 +402,39 @@ export default function DoctorDashboardPage() {
                   <h2 id="thresholds-heading" className="text-sm font-semibold text-gray-700 mb-4">
                     Umbrales de activación
                   </h2>
-                  {/* PLACEHOLDER threshold values — replace with GET /doctor/thresholds?patient={id} */}
-                  <div className="flex flex-wrap items-end gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1.5" htmlFor="bpmMin">
-                        BPM Mínimo
-                      </label>
-                      <input
-                        id="bpmMin"
-                        type="number"
-                        value={bpmMin}
-                        onChange={(e) => setBpmMin(Number(e.target.value))}
-                        className="w-24 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                        style={{ border: "1.5px solid #D6E8F5", backgroundColor: "#FAFAFA" }}
-                        min={0}
-                        max={200}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1.5" htmlFor="bpmMax">
-                        BPM Máximo
-                      </label>
-                      <input
-                        id="bpmMax"
-                        type="number"
-                        value={bpmMax}
-                        onChange={(e) => setBpmMax(Number(e.target.value))}
-                        className="w-24 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                        style={{ border: "1.5px solid #D6E8F5", backgroundColor: "#FAFAFA" }}
-                        min={0}
-                        max={300}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1.5" htmlFor="spo2Min">
-                        SPO2 Mínimo %
-                      </label>
-                      <input
-                        id="spo2Min"
-                        type="number"
-                        value={spo2Min}
-                        onChange={(e) => setSpo2Min(Number(e.target.value))}
-                        className="w-24 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                        style={{ border: "1.5px solid #D6E8F5", backgroundColor: "#FAFAFA" }}
-                        min={0}
-                        max={100}
-                      />
-                    </div>
-                    {/* PLACEHOLDER action — replace with PATCH /doctor/thresholds */}
-                    <button
-                      onClick={handleSaveThresholds}
-                      className="rounded-xl px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
-                      style={{ backgroundColor: saved ? "#22C55E" : "#4A7FA5" }}
+                  <div className="flex flex-wrap gap-3">
+                    <div
+                      className="rounded-xl px-4 py-3 min-w-[100px]"
+                      style={{ backgroundColor: "#F9FAFB", border: "1px solid #E5E7EB" }}
                     >
-                      {saved ? "¡Guardado!" : "Guardar umbrales"}
-                    </button>
+                      <p className="text-xs font-medium text-gray-400 mb-0.5">BPM Mínimo</p>
+                      <p className="text-xl font-bold" style={{ color: "#4A7FA5" }}>
+                        {patientThresholds.bpmMin}
+                      </p>
+                    </div>
+                    <div
+                      className="rounded-xl px-4 py-3 min-w-[100px]"
+                      style={{ backgroundColor: "#F9FAFB", border: "1px solid #E5E7EB" }}
+                    >
+                      <p className="text-xs font-medium text-gray-400 mb-0.5">BPM Máximo</p>
+                      <p className="text-xl font-bold" style={{ color: "#4A7FA5" }}>
+                        {patientThresholds.bpmMax}
+                      </p>
+                    </div>
+                    <div
+                      className="rounded-xl px-4 py-3 min-w-[100px]"
+                      style={{ backgroundColor: "#F9FAFB", border: "1px solid #E5E7EB" }}
+                    >
+                      <p className="text-xs font-medium text-gray-400 mb-0.5">SpO2 Mínimo</p>
+                      <p className="text-xl font-bold" style={{ color: "#4A7FA5" }}>
+                        {patientThresholds.spo2Min}
+                        <span className="ml-0.5 text-sm font-normal text-gray-400">%</span>
+                      </p>
+                    </div>
                   </div>
+                  <p className="mt-3 text-xs text-gray-400">
+                    Los umbrales se configuran en la pestaña Configuración
+                  </p>
                 </section>
 
                 {/* Crisis events history table */}
@@ -557,12 +543,7 @@ export default function DoctorDashboardPage() {
         )}
 
         {activeTab === "Configuración" && (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <p className="text-sm font-semibold text-gray-500">Configuración en construcción</p>
-            <p className="mt-1 text-xs text-gray-400">
-              Aquí podrás ajustar las preferencias de tu cuenta.
-            </p>
-          </div>
+          <ConfiguracionView role="DOCTOR" user={user} token={user.token} />
         )}
 
       </main>

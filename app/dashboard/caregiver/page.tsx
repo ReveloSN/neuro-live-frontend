@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import HistorialView from "@/components/HistorialView";
+import ConfiguracionView from "@/components/ConfiguracionView";
 
 // ---------------------------------------------------------------------------
 // PLACEHOLDER DATA — replace with GET /caregiver/patients
@@ -539,10 +540,7 @@ export default function CaregiverDashboardPage() {
         )}
 
         {activeTab === "Configuración" && (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <p className="text-sm font-semibold text-gray-500">Configuración en construcción</p>
-            <p className="mt-1 text-xs text-gray-400">Aquí podrás ajustar las preferencias de tu cuenta.</p>
-          </div>
+          <ConfiguracionView role="CAREGIVER" user={user} token={user.token} />
         )}
 
       </main>

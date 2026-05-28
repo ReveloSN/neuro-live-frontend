@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import CalmMode from "@/components/CalmMode";
 import WorkspaceEditor from "@/components/WorkspaceEditor";
 import HistorialView from "@/components/HistorialView";
+import ConfiguracionView from "@/components/ConfiguracionView";
 
 // ---------------------------------------------------------------------------
 // PLACEHOLDER DATA — replace with real API calls when backend is ready
@@ -197,10 +198,7 @@ export default function PatientDashboardPage() {
         )}
 
         {activeTab === "Configuración" && (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <p className="text-sm font-semibold text-gray-500">Configuración en construcción</p>
-            <p className="mt-1 text-xs text-gray-400">Aquí podrás ajustar las preferencias de tu cuenta.</p>
-          </div>
+          <ConfiguracionView role="PATIENT" user={user} token={user.token} />
         )}
 
         {/* ── Escritorio split layout ───────────────────────────────────────── */}
