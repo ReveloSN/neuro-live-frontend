@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { getApiBaseUrl } from "@/lib/api";
 
-const BACKEND_URL = "https://neurolive-backend.azurewebsites.net";
+const BACKEND_URL = getApiBaseUrl();
 
 export interface LinkedPatient {
   id: number;

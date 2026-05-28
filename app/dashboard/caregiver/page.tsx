@@ -5,17 +5,36 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import HistorialView from "@/components/HistorialView";
 import ConfiguracionView from "@/components/ConfiguracionView";
-import { useLinkedPatients } from "@/hooks/useLinkedPatients";
+import {
+  NeuroLiveApiError,
+  getLatestTelemetry,
+  getMyLinks,
+  getPatientCrises,
+  getPatientDevices,
+  optionalBackendGet,
+} from "@/lib/clinical-api";
+import type { BiometricTelemetrySampleResponse, CrisisEventResponse, DeviceResponse } from "@/lib/types";
 
+// ---------------------------------------------------------------------------
+// PLACEHOLDER DATA — replace with GET /caregiver/patients
+// Each entry maps to a real patient returned by the API.
+// ---------------------------------------------------------------------------
 interface Patient {
   id: string;
+  patientId?: number;
   name: string;
   status: "Normal" | "Riesgo" | "Crisis";
-  bpm: number;
-  spo2: number;
+  // replace with GET /patients/{id}/biometric-data
+  bpm: number | null;
+  spo2: number | null;
   bpmSeries: number[];
   spo2Series: number[];
   alerts: { dot: string; label: string; time: string }[];
+  latestTelemetry?: BiometricTelemetrySampleResponse | null;
+  devices?: DeviceResponse[];
+  fromBackend?: boolean;
+  lastUpdatedLabel?: string;
+  error?: string;
 }
 
 const STATUS_STYLES: Record<string, { bg: string; color: string }> = {
@@ -35,6 +54,82 @@ const PALETTE_COLORS = [
 const AUDIO_OPTIONS = ["Lluvia", "Bosque", "Silencio"] as const;
 type AudioOption = (typeof AUDIO_OPTIONS)[number];
 type Tab = "Mis Pacientes" | "Historial" | "Configuración";
+const DASHBOARD_POLL_MS = 8000;
+
+function buildRealtimeSeries(value: number | undefined) {
+  if (typeof value !== "number") return [];
+  return Array.from({ length: 20 }, () => Math.round(value));
+}
+
+function latestDevice(devices: DeviceResponse[]) {
+  return devices[0];
+}
+
+function statusFromCaregiverData(
+  telemetry: BiometricTelemetrySampleResponse | null,
+  devices: DeviceResponse[],
+  crisisEvents: CrisisEventResponse[],
+): Patient["status"] {
+  if (crisisEvents.some((event) => event.endedAt == null || event.state === "ACTIVE_CRISIS")) return "Crisis";
+  if (telemetry?.predictionState === "PRE_CRISIS") return "Crisis";
+  const device = latestDevice(devices);
+  if (telemetry?.predictionState === "WARNING" || device?.connected === false || device?.sensorContact === false) {
+    return "Riesgo";
+  }
+  return "Normal";
+}
+
+function formatTelemetryTime(value: string | null | undefined) {
+  if (!value) return "Sin telemetria reciente";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Fecha no disponible";
+  return parsed.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" });
+}
+
+function alertsFromBackend(
+  telemetry: BiometricTelemetrySampleResponse | null,
+  devices: DeviceResponse[],
+  crisisEvents: CrisisEventResponse[],
+) {
+  const alerts: Patient["alerts"] = [];
+  const device = latestDevice(devices);
+
+  if (crisisEvents.some((event) => event.endedAt == null || event.state === "ACTIVE_CRISIS")) {
+    alerts.push({ dot: "#EF4444", label: "Crisis activa registrada", time: "backend" });
+  }
+  if (device?.connected === false) {
+    alerts.push({ dot: "#EF4444", label: "Dispositivo desconectado", time: "backend" });
+  }
+  if (device?.sensorContact === false) {
+    alerts.push({ dot: "#F59E0B", label: "Sensor sin contacto", time: "backend" });
+  }
+  if (telemetry?.predictionState === "WARNING") {
+    alerts.push({ dot: "#F59E0B", label: "Prediccion en advertencia", time: formatTelemetryTime(telemetry.observedAt) });
+  }
+  if (telemetry?.predictionState === "PRE_CRISIS") {
+    alerts.push({ dot: "#EF4444", label: "Prediccion pre-crisis", time: formatTelemetryTime(telemetry.observedAt) });
+  }
+  if (telemetry) {
+    alerts.push({
+      dot: "#22C55E",
+      label: `BPM ${Math.round(telemetry.bpm)} · SpO2 ${Math.round(telemetry.spo2)}%`,
+      time: formatTelemetryTime(telemetry.observedAt),
+    });
+  }
+
+  return alerts.length > 0
+    ? alerts
+    : [{ dot: "#9CA3AF", label: "Sin telemetria persistida todavia", time: "backend" }];
+}
+
+function resolveCaregiverError(error: unknown) {
+  if (error instanceof NeuroLiveApiError) {
+    if (error.status === 403) return "El vinculo ya no concede acceso a ese paciente.";
+    if (error.status === 401) return "Sesion expirada. Vuelve a iniciar sesion.";
+    return error.message;
+  }
+  return "No se pudieron cargar los pacientes reales.";
+}
 
 // ── Shared components ────────────────────────────────────────────────────────
 
@@ -108,34 +203,17 @@ function PatientList({
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Mis Pacientes</h1>
-        {!loading && !error && (
-          <p className="mt-1 text-sm text-gray-500">
-            {patients.length} pacientes asignados
+        <p className="mt-1 text-sm text-gray-500">
+          {patients.length} pacientes asignados
+        </p>
+        {loading && <p className="mt-2 text-xs text-gray-400">Cargando pacientes vinculados...</p>}
+        {error && <p className="mt-2 text-xs font-medium" style={{ color: "#991B1B" }}>{error}</p>}
+        {!loading && !error && patients.length === 0 && (
+          <p className="mt-2 text-sm text-gray-500">
+            No tienes pacientes vinculados aún. Ve a la pestaña Vinculación para conectarte con un paciente.
           </p>
         )}
       </div>
-
-      {loading && (
-        <div className="flex justify-center py-12">
-          <div
-            className="h-8 w-8 animate-spin rounded-full border-4"
-            style={{ borderColor: "#4A7FA5", borderTopColor: "transparent" }}
-            aria-label="Cargando pacientes"
-          />
-        </div>
-      )}
-
-      {!loading && error && (
-        <p className="rounded-xl px-5 py-4 text-sm text-red-600" style={{ backgroundColor: "#FEE2E2" }}>
-          {error}
-        </p>
-      )}
-
-      {!loading && !error && patients.length === 0 && (
-        <p className="rounded-xl px-5 py-6 text-center text-sm text-gray-500" style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}>
-          No tienes pacientes vinculados aún. Ve a la pestaña Vinculación para conectarte con un paciente.
-        </p>
-      )}
 
       {!loading && !error && patients.length > 0 && (
         <ul className="space-y-3">
@@ -235,7 +313,7 @@ function PatientDetail({
           {/* BPM — PLACEHOLDER: replace with GET /patients/{id}/biometric-data */}
           <div className="min-w-[90px]">
             <p className="text-3xl font-bold" style={{ color: "#4A7FA5" }}>
-              {patient.bpm}
+              {patient.bpm == null ? "--" : Math.round(patient.bpm)}
               <span className="ml-1 text-sm font-normal text-gray-400">BPM</span>
             </p>
             <p className="mt-1 text-xs text-gray-400">Ritmo cardíaco</p>
@@ -244,7 +322,7 @@ function PatientDetail({
           {/* SpO2 — PLACEHOLDER: replace with GET /patients/{id}/biometric-data */}
           <div className="min-w-[90px]">
             <p className="text-3xl font-bold" style={{ color: "#22C55E" }}>
-              {patient.spo2}
+              {patient.spo2 == null ? "--" : Math.round(patient.spo2)}
               <span className="ml-1 text-sm font-normal text-gray-400">%</span>
             </p>
             <p className="mt-1 text-xs text-gray-400">Oxigenación</p>
@@ -252,22 +330,38 @@ function PatientDetail({
 
           {/* Chart — PLACEHOLDER: replace with streaming data from /patients/{id}/biometric-data */}
           <div className="flex-1 min-w-[200px]">
-            <BiometricChart bpmData={patient.bpmSeries} spo2Data={patient.spo2Series} />
-            <div className="mt-1 flex gap-4 text-xs text-gray-400">
-              <span className="flex items-center gap-1.5">
-                <span className="inline-block h-2 w-4 rounded-full" style={{ backgroundColor: "#4A7FA5" }} />
-                BPM
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="inline-block h-2 w-4 rounded-full" style={{ backgroundColor: "#22C55E" }} />
-                SpO2
-              </span>
-            </div>
+            {patient.fromBackend && !patient.latestTelemetry ? (
+              <p className="rounded-xl px-4 py-5 text-center text-sm text-gray-500" style={{ backgroundColor: "#F9FAFB" }}>
+                {patient.error ?? "Sin telemetria persistida para este paciente."}
+              </p>
+            ) : (
+              <>
+                <BiometricChart bpmData={patient.bpmSeries} spo2Data={patient.spo2Series} />
+                <div className="mt-1 flex gap-4 text-xs text-gray-400">
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block h-2 w-4 rounded-full" style={{ backgroundColor: "#4A7FA5" }} />
+                    BPM
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block h-2 w-4 rounded-full" style={{ backgroundColor: "#22C55E" }} />
+                    SpO2
+                  </span>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
-        {/* PLACEHOLDER timestamp — replace with real last-update time */}
-        <p className="mt-3 text-xs text-gray-400">Última actualización: hace 2 seg</p>
+        <div className="mt-3 grid gap-1 text-xs text-gray-400">
+          <span>Última actualización: {patient.lastUpdatedLabel ?? "hace 2 seg"}</span>
+          {patient.fromBackend && (
+            <>
+              <span>{patient.devices?.some((device) => device.connected) ? "Dispositivo conectado" : "Dispositivo desconectado o no registrado"}</span>
+              <span>{patient.devices?.some((device) => device.sensorContact) ? "Sensor en contacto" : "Sensor sin contacto o no reportado"}</span>
+              {patient.latestTelemetry?.predictionState && <span>Prediccion: {patient.latestTelemetry.predictionState}</span>}
+            </>
+          )}
+        </div>
       </section>
 
       {/* ── Environmental control ─────────────────────────────────────────── */}
@@ -394,22 +488,11 @@ export default function CaregiverDashboardPage() {
   const { user, loading, logout } = useAuth();
   const router = useRouter();
 
-  const { patients: linkedPatients, loading: patientsLoading, error: patientsError } =
-    useLinkedPatients(user?.token ?? "", user?.role ?? "");
-
-  const patients: Patient[] = linkedPatients.map((lp) => ({
-    id: String(lp.id),
-    name: `Paciente ${lp.patientId}`,
-    status: "Normal" as const,
-    bpm: 0,
-    spo2: 0,
-    bpmSeries: [0, 0],
-    spo2Series: [0, 0],
-    alerts: [],
-  }));
-
   const [activeTab, setActiveTab]           = useState<Tab>("Mis Pacientes");
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [patientsLoading, setPatientsLoading] = useState(false);
+  const [patientsError, setPatientsError] = useState<string | null>(null);
 
   // Environmental controls — persisted across patient views
   const [lightOn, setLightOn]         = useState(true);
@@ -441,7 +524,99 @@ export default function CaregiverDashboardPage() {
     }
   }, [loading, user, router]);
 
-  // Load per-patient environmental settings when selected patient changes
+  useEffect(() => {
+    if (!user || user.role !== "CAREGIVER") return;
+
+    let active = true;
+    const token = user.token;
+
+    async function loadCaregiverPatients(showSpinner: boolean) {
+      if (showSpinner) setPatientsLoading(true);
+      setPatientsError(null);
+
+      try {
+        const links = await getMyLinks(token);
+        const activeLinks = links.filter((link) => link.status === "ACTIVE" && link.patientId != null);
+
+        if (activeLinks.length === 0) {
+          if (!active) return;
+          setPatients([]);
+          setSelectedPatient(null);
+          return;
+        }
+
+        // Mantiene los dashboards existentes y solo cambia su fuente de datos.
+        const realPatients = await Promise.all(
+          activeLinks.map(async (link) => {
+            const patientId = link.patientId as number;
+            try {
+              const [latestTelemetry, devices, crisisPage] = await Promise.all([
+                optionalBackendGet(getLatestTelemetry(token, patientId)),
+                getPatientDevices(token, patientId),
+                getPatientCrises(token, patientId, 6),
+              ]);
+              const crisisEvents = crisisPage.content ?? [];
+              return {
+                id: String(patientId),
+                patientId,
+                name: `Paciente #${patientId}`,
+                status: statusFromCaregiverData(latestTelemetry, devices, crisisEvents),
+                bpm: latestTelemetry?.bpm ?? null,
+                spo2: latestTelemetry?.spo2 ?? null,
+                bpmSeries: buildRealtimeSeries(latestTelemetry?.bpm),
+                spo2Series: buildRealtimeSeries(latestTelemetry?.spo2),
+                alerts: alertsFromBackend(latestTelemetry, devices, crisisEvents),
+                latestTelemetry,
+                devices,
+                fromBackend: true,
+                lastUpdatedLabel: formatTelemetryTime(latestTelemetry?.observedAt),
+              } satisfies Patient;
+            } catch (error) {
+              return {
+                id: String(patientId),
+                patientId,
+                name: `Paciente #${patientId}`,
+                status: "Riesgo",
+                bpm: null,
+                spo2: null,
+                bpmSeries: [],
+                spo2Series: [],
+                alerts: [{ dot: "#F59E0B", label: resolveCaregiverError(error), time: "backend" }],
+                latestTelemetry: null,
+                devices: [],
+                fromBackend: true,
+                lastUpdatedLabel: "Sin datos",
+                error: resolveCaregiverError(error),
+              } satisfies Patient;
+            }
+          }),
+        );
+
+        if (!active) return;
+        setPatients(realPatients);
+        setSelectedPatient((current) => {
+          return current ? realPatients.find((patient) => patient.id === current.id) ?? null : null;
+        });
+      } catch (error) {
+        if (!active) return;
+        setPatients([]);
+        setSelectedPatient(null);
+        setPatientsError(resolveCaregiverError(error));
+      } finally {
+        if (active && showSpinner) setPatientsLoading(false);
+      }
+    }
+
+    void loadCaregiverPatients(true);
+    const id = window.setInterval(() => void loadCaregiverPatients(false), DASHBOARD_POLL_MS);
+
+    return () => {
+      active = false;
+      window.clearInterval(id);
+    };
+  }, [user]);
+
+  // Carga preferencias ambientales por paciente seleccionado.
   useEffect(() => {
     if (!selectedPatient) return;
     try {
@@ -453,28 +628,29 @@ export default function CaregiverDashboardPage() {
         if (
           typeof parsed.activeAudio === "string" &&
           (AUDIO_OPTIONS as readonly string[]).includes(parsed.activeAudio)
-        )
+        ) {
           setActiveAudio(parsed.activeAudio as AudioOption);
+        }
         return;
       }
     } catch {
-      // ignore malformed entries
+      // localStorage puede contener valores antiguos.
     }
     setLightOn(true);
     setActiveColor("#4ADE80");
     setActiveAudio("Silencio");
   }, [selectedPatient]);
 
-  // Save per-patient environmental settings whenever they change
+  // Guarda preferencias ambientales por paciente.
   useEffect(() => {
     if (!selectedPatient) return;
     try {
       localStorage.setItem(
         `nl_env_${selectedPatient.id}`,
-        JSON.stringify({ lightOn, activeColor, activeAudio })
+        JSON.stringify({ lightOn, activeColor, activeAudio }),
       );
     } catch {
-      // localStorage unavailable
+      // localStorage no disponible.
     }
   }, [lightOn, activeColor, activeAudio, selectedPatient]);
 
@@ -576,7 +752,7 @@ export default function CaregiverDashboardPage() {
         )}
 
         {activeTab === "Historial" && (
-          <HistorialView role="CAREGIVER" linkedPatients={linkedPatients} />
+          <HistorialView role="CAREGIVER" userToken={user.token} />
         )}
 
         {activeTab === "Configuración" && (

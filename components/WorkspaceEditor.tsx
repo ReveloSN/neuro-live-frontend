@@ -6,6 +6,7 @@ import Underline from "@tiptap/extension-underline";
 import Link from "@tiptap/extension-link";
 import Image from "@tiptap/extension-image";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { getApiBaseUrl } from "@/lib/api";
 
 interface Session {
   id: string;
@@ -27,7 +28,7 @@ interface WorkspaceEditorProps {
 }
 
 const MAX_SESSIONS = 10;
-const BACKEND_URL = "https://neurolive-backend.azurewebsites.net";
+const BACKEND_URL = getApiBaseUrl();
 
 function ResizableImageView({ node }: NodeViewProps) {
   return (

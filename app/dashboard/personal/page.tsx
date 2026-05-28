@@ -7,6 +7,7 @@ import CalmMode from "@/components/CalmMode";
 import WorkspaceEditor from "@/components/WorkspaceEditor";
 import HistorialView from "@/components/HistorialView";
 import ConfiguracionView from "@/components/ConfiguracionView";
+import { getCurrentUserProfile } from "@/lib/clinical-api";
 
 // ---------------------------------------------------------------------------
 // PLACEHOLDER DATA — replace with real API calls when backend is ready
@@ -79,11 +80,8 @@ export default function PersonalDashboardPage() {
 
   useEffect(() => {
     if (!user) return;
-    fetch("https://neurolive-backend.azurewebsites.net/users/me", {
-      headers: { Authorization: `Bearer ${user.token}` },
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: { id?: number } | null) => { if (data?.id) setUserId(data.id); })
+    getCurrentUserProfile(user.token)
+      .then((data) => { if (data.id) setUserId(data.id); })
       .catch(() => {});
   }, [user]);
 

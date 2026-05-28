@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { getApiBaseUrl } from "@/lib/api";
 import type { UserRole } from "@/lib/types";
 
 export type ConfiguracionRole = UserRole;
@@ -14,7 +15,7 @@ const ROLE_LABELS: Record<ConfiguracionRole, string> = {
   DOCTOR: "Médico",
 };
 
-const API_BASE = "https://neurolive-backend.azurewebsites.net";
+const API_BASE = getApiBaseUrl();
 
 interface UserProfile {
   id: string;

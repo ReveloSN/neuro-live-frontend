@@ -7,6 +7,15 @@ import CalmMode from "@/components/CalmMode";
 import WorkspaceEditor from "@/components/WorkspaceEditor";
 import HistorialView from "@/components/HistorialView";
 import ConfiguracionView from "@/components/ConfiguracionView";
+import {
+  NeuroLiveApiError,
+  getCurrentUserProfile,
+  getLatestTelemetry,
+  getMyLinks,
+  getPatientDevices,
+  optionalBackendGet,
+} from "@/lib/clinical-api";
+import type { BiometricTelemetrySampleResponse, DeviceResponse } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // PLACEHOLDER DATA — replace with real API calls when backend is ready
@@ -18,7 +27,6 @@ const PLACEHOLDER_SPO2_SERIES = [98, 97, 98, 99, 98, 97, 98, 98, 97, 98, 99, 98,
 const PLACEHOLDER_SESSION_GOAL_MIN = 45; // PLACEHOLDER: session goal minutes from user settings
 const PLACEHOLDER_ZEN_TIP = "Respira profundo. Estás en un espacio seguro. Cada palabra que escribes es un paso valioso hacia tu bienestar."; // PLACEHOLDER: rotating zen tips from API
 const PLACEHOLDER_STATUS: PatientStatus = "Normal"; // PLACEHOLDER: real-time status from biometric analysis API
-const PLACEHOLDER_CAREGIVER_NAME = "María López"; // PLACEHOLDER: linked caregiver name from user profile API
 // ---------------------------------------------------------------------------
 
 type Tab = "Escritorio" | "Historial" | "Configuración";
@@ -29,6 +37,8 @@ const STATUS_CONFIG: Record<PatientStatus, { bg: string; color: string; dot: str
   Riesgo: { bg: "#FEF3C7", color: "#92400E", dot: "#F59E0B" },
   Crisis: { bg: "#FEE2E2", color: "#991B1B", dot: "#EF4444" },
 };
+
+const DASHBOARD_POLL_MS = 8000;
 
 function formatDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600).toString().padStart(2, "0");
@@ -91,6 +101,33 @@ function getBarLabel(pct: number): string {
   return "Alerta";
 }
 
+function predictionToStatus(predictionState: string | null | undefined): PatientStatus {
+  if (predictionState === "PRE_CRISIS") return "Crisis";
+  if (predictionState === "WARNING") return "Riesgo";
+  return "Normal";
+}
+
+function buildMetricSeries(latestValue: number | undefined, fallback: number[]) {
+  if (typeof latestValue !== "number") return fallback;
+  return [...fallback.slice(1), Math.round(latestValue)];
+}
+
+function formatTelemetryTime(value: string | null | undefined) {
+  if (!value) return "Sin datos recientes";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Fecha no disponible";
+  return parsed.toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" });
+}
+
+function resolvePatientError(error: unknown) {
+  if (error instanceof NeuroLiveApiError) {
+    if (error.status === 401) return "Sesion expirada. Vuelve a iniciar sesion.";
+    if (error.status === 403) return "No tienes permiso para consultar estos datos clinicos.";
+    return error.message;
+  }
+  return "No se pudieron cargar los datos reales del paciente.";
+}
+
 export default function PatientDashboardPage() {
   const { user, loading, logout } = useAuth();
   const router = useRouter();
@@ -101,6 +138,11 @@ export default function PatientDashboardPage() {
   const [patientId, setPatientId] = useState<number | undefined>(undefined);
   const [dwellTimePct, setDwellTimePct] = useState(0);
   const [flightTimePct, setFlightTimePct] = useState(0);
+  const [telemetry, setTelemetry] = useState<BiometricTelemetrySampleResponse | null>(null);
+  const [devices, setDevices] = useState<DeviceResponse[]>([]);
+  const [linkedCareTeamCount, setLinkedCareTeamCount] = useState(0);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
 
   function handleLogout() {
     logout();
@@ -117,13 +159,46 @@ export default function PatientDashboardPage() {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
-    fetch("https://neurolive-backend.azurewebsites.net/users/me", {
-      headers: { Authorization: `Bearer ${user.token}` },
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: { id?: number } | null) => { if (data?.id) setPatientId(data.id); })
-      .catch(() => {});
+    if (!user || user.role !== "PATIENT") return;
+
+    let active = true;
+    const token = user.token;
+
+    async function loadPatientData(showSpinner: boolean) {
+      if (showSpinner) setDashboardLoading(true);
+      setDashboardError(null);
+
+      try {
+        const profile = await getCurrentUserProfile(token);
+        const patientId = profile.id;
+
+        // Carga datos REST reales y deja placeholders solo como respaldo si no hay muestras.
+        const [latestTelemetry, patientDevices, links] = await Promise.all([
+          optionalBackendGet(getLatestTelemetry(token, patientId)),
+          getPatientDevices(token, patientId),
+          getMyLinks(token),
+        ]);
+
+        if (!active) return;
+        setPatientId(patientId);
+        setTelemetry(latestTelemetry);
+        setDevices(patientDevices);
+        setLinkedCareTeamCount(links.filter((link) => link.status === "ACTIVE").length);
+      } catch (error) {
+        if (!active) return;
+        setDashboardError(resolvePatientError(error));
+      } finally {
+        if (active && showSpinner) setDashboardLoading(false);
+      }
+    }
+
+    void loadPatientData(true);
+    const id = window.setInterval(() => void loadPatientData(false), DASHBOARD_POLL_MS);
+
+    return () => {
+      active = false;
+      window.clearInterval(id);
+    };
   }, [user]);
 
   if (loading || !user) {
@@ -142,9 +217,33 @@ export default function PatientDashboardPage() {
   const sessionProgressPct = Math.min(100, (sessionSeconds / sessionGoalSeconds) * 100);
   const tabs: Tab[] = ["Escritorio", "Historial", "Configuración"];
 
-  // PLACEHOLDER: status derived from real-time biometric analysis
-  const status = PLACEHOLDER_STATUS;
+  const status = telemetry ? predictionToStatus(telemetry.predictionState) : PLACEHOLDER_STATUS;
   const statusCfg = STATUS_CONFIG[status];
+  const displayBpm = telemetry?.bpm ?? PLACEHOLDER_BPM;
+  const displaySpo2 = telemetry?.spo2 ?? PLACEHOLDER_SPO2;
+  const bpmSeries = buildMetricSeries(telemetry?.bpm, PLACEHOLDER_BPM_SERIES);
+  const spo2Series = buildMetricSeries(telemetry?.spo2, PLACEHOLDER_SPO2_SERIES);
+  const activeDevice = telemetry
+    ? devices.find((device) => device.macAddress === telemetry.deviceMac) ?? devices[0]
+    : devices[0];
+  const deviceStatus = activeDevice
+    ? activeDevice.connected
+      ? "Dispositivo conectado"
+      : "Dispositivo desconectado"
+    : "Sin dispositivo registrado";
+  const sensorStatus = activeDevice?.sensorContact == null
+    ? "Contacto del sensor no reportado"
+    : activeDevice.sensorContact
+      ? "Sensor en contacto"
+      : "Sensor sin contacto";
+  const telemetrySource = telemetry
+    ? `Actualizado: ${formatTelemetryTime(telemetry.observedAt)}`
+    : dashboardLoading
+      ? "Cargando datos reales..."
+      : "Sin telemetria real aun; se muestra respaldo visual.";
+  const monitoringLabel = linkedCareTeamCount > 0
+    ? `${linkedCareTeamCount} vinculo(s) activo(s)`
+    : "sin vinculos clinicos activos";
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: "#F5F0E8" }}>
@@ -288,23 +387,20 @@ export default function PatientDashboardPage() {
             <div className="mt-3 flex items-end gap-6">
               <div>
                 <p className="text-xs text-gray-400 mb-0.5">BPM</p>
-                {/* PLACEHOLDER: real-time BPM from wearable */}
                 <p className="text-xl font-bold" style={{ color: "#4A7FA5" }}>
-                  {PLACEHOLDER_BPM}
+                  {Math.round(displayBpm)}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-gray-400 mb-0.5">SpO2</p>
-                {/* PLACEHOLDER: real-time SpO2 from wearable */}
                 <p className="text-xl font-bold" style={{ color: "#34D399" }}>
-                  {PLACEHOLDER_SPO2}<span className="text-sm font-normal">%</span>
+                  {Math.round(displaySpo2)}<span className="text-sm font-normal">%</span>
                 </p>
               </div>
             </div>
 
             <div className="mt-3" style={{ borderTop: "1px solid #F9FAFB", paddingTop: "12px" }}>
-              {/* PLACEHOLDER: streaming BPM/SpO2 chart data */}
-              <MiniChart bpmData={PLACEHOLDER_BPM_SERIES} spo2Data={PLACEHOLDER_SPO2_SERIES} />
+              <MiniChart bpmData={bpmSeries} spo2Data={spo2Series} />
               <div className="mt-2 flex gap-4 text-xs text-gray-400">
                 <span className="flex items-center gap-1.5">
                   <span className="inline-block h-1.5 w-4 rounded-full" style={{ backgroundColor: "#4A7FA5" }} />
@@ -314,6 +410,15 @@ export default function PatientDashboardPage() {
                   <span className="inline-block h-1.5 w-4 rounded-full" style={{ backgroundColor: "#34D399" }} />
                   SpO2
                 </span>
+              </div>
+              <div className="mt-3 grid gap-1 text-xs text-gray-500">
+                <span>{telemetrySource}</span>
+                <span>{deviceStatus}</span>
+                <span>{sensorStatus}</span>
+                {telemetry?.predictionState && <span>Prediccion: {telemetry.predictionState}</span>}
+                {dashboardError && (
+                  <span className="font-medium" style={{ color: "#991B1B" }}>{dashboardError}</span>
+                )}
               </div>
             </div>
           </div>
@@ -403,9 +508,7 @@ export default function PatientDashboardPage() {
           {/* Monitoring notice — PLACEHOLDER: linked caregiver/doctor from user profile API */}
           <p className="text-center text-xs leading-relaxed" style={{ color: "#9CA3AF" }}>
             <ShieldIcon />
-            {" "}Tus datos biométricos son monitoreados en tiempo real por tu cuidador vinculado
-            {/* PLACEHOLDER: linked caregiver/doctor name from profile API */}
-            {" "}({PLACEHOLDER_CAREGIVER_NAME}).
+            {" "}Tus datos biométricos se consultan desde el backend para {monitoringLabel}.
           </p>
         </div>
         </div>
