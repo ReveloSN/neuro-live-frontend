@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import HistorialView from "@/components/HistorialView";
 
 // ---------------------------------------------------------------------------
 // PLACEHOLDER DATA — replace with GET /caregiver/patients
@@ -534,10 +535,7 @@ export default function CaregiverDashboardPage() {
         )}
 
         {activeTab === "Historial" && (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <p className="text-sm font-semibold text-gray-500">Historial en construcción</p>
-            <p className="mt-1 text-xs text-gray-400">Aquí se mostrarán los registros históricos de los pacientes.</p>
-          </div>
+          <HistorialView role="CAREGIVER" />
         )}
 
         {activeTab === "Configuración" && (

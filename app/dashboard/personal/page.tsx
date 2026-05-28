@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import CalmMode from "@/components/CalmMode";
 import WorkspaceEditor from "@/components/WorkspaceEditor";
+import HistorialView from "@/components/HistorialView";
 
 // ---------------------------------------------------------------------------
 // PLACEHOLDER DATA — replace with real API calls when backend is ready
@@ -162,8 +163,25 @@ export default function PersonalDashboardPage() {
         </div>
       </header>
 
-      {/* ── Main split layout ──────────────────────────────────────────────── */}
-      <main className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 p-4 sm:p-6 max-w-screen-xl mx-auto w-full">
+      {/* ── Main ───────────────────────────────────────────────────────────── */}
+      <main className="flex-1 p-4 sm:p-6 max-w-screen-xl mx-auto w-full">
+
+        {activeTab === "Historial" && (
+          <div className="mx-auto max-w-3xl">
+            <HistorialView role="USER_PERSONAL" />
+          </div>
+        )}
+
+        {activeTab === "Configuración" && (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <p className="text-sm font-semibold text-gray-500">Configuración en construcción</p>
+            <p className="mt-1 text-xs text-gray-400">Aquí podrás ajustar las preferencias de tu cuenta.</p>
+          </div>
+        )}
+
+        {/* ── Escritorio split layout ───────────────────────────────────────── */}
+        {activeTab === "Escritorio" && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
         {/* ── Left: Text Editor ────────────────────────────────────────────── */}
         <div className="lg:col-span-2 flex flex-col gap-3">
@@ -335,6 +353,8 @@ export default function PersonalDashboardPage() {
             <p className="text-sm leading-relaxed text-gray-500">{PLACEHOLDER_ZEN_TIP}</p>
           </div>
         </div>
+        </div>
+        )}
       </main>
     </div>
   );
