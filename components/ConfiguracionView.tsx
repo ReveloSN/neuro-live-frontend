@@ -62,6 +62,7 @@ export default function ConfiguracionView({
   const [consentOn, setConsentOn] = useState(false);
   const [consentDate, setConsentDate] = useState<string | null>(null);
   const [savingConsent, setSavingConsent] = useState(false);
+  const [loadingConsent, setLoadingConsent] = useState(role === "PATIENT");
   const [consentMsg, setConsentMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   // ── Clinical thresholds state (DOCTOR only) ────────────────────────────────
@@ -80,7 +81,10 @@ export default function ConfiguracionView({
         const res = await fetch(`${API_BASE}/users/me`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          if (role === "PATIENT") setLoadingConsent(false);
+          return;
+        }
         const data = await res.json();
         const fetched: UserProfile = {
           id: data.id ?? data.userId ?? "",
@@ -89,12 +93,39 @@ export default function ConfiguracionView({
         };
         setProfile(fetched);
         setNameValue(fetched.name);
+
+        if (role === "PATIENT" && fetched.id) {
+          try {
+            const cRes = await fetch(
+              `${API_BASE}/users/patients/${fetched.id}/clinical-profile`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+            if (cRes.ok) {
+              const cData = await cRes.json();
+              if (typeof cData.consentGiven === "boolean") {
+                setConsentOn(cData.consentGiven);
+                if (cData.consentGiven && cData.consentDate) {
+                  const d = new Date(String(cData.consentDate));
+                  setConsentDate(
+                    isNaN(d.getTime())
+                      ? String(cData.consentDate)
+                      : d.toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })
+                  );
+                }
+              }
+            }
+          } catch {
+            // default to false on error
+          } finally {
+            setLoadingConsent(false);
+          }
+        }
       } catch {
-        // non-fatal — falls back to user prop
+        if (role === "PATIENT") setLoadingConsent(false);
       }
     }
     fetchProfile();
-  }, [token, user.name]);
+  }, [token, user.name, role]);
 
   // Load per-patient thresholds from localStorage when linkedPatients changes (DOCTOR only)
   useEffect(() => {
@@ -415,20 +446,28 @@ export default function ConfiguracionView({
             <span className="text-sm text-gray-700">
               Autorizo el procesamiento de mis datos biométricos
             </span>
-            <button
-              role="switch"
-              aria-checked={consentOn}
-              onClick={handleConsentToggle}
-              disabled={savingConsent}
-              className="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1 disabled:opacity-50"
-              style={{ backgroundColor: consentOn ? "#4A7FA5" : "#D1D5DB" }}
-            >
-              <span className="sr-only">{consentOn ? "Activado" : "Desactivado"}</span>
-              <span
-                className="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
-                style={{ transform: consentOn ? "translateX(22px)" : "translateX(3px)" }}
-              />
-            </button>
+            <div className="flex items-center gap-2">
+              {loadingConsent && (
+                <svg className="h-4 w-4 animate-spin text-gray-400" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              )}
+              <button
+                role="switch"
+                aria-checked={consentOn}
+                aria-label={loadingConsent ? "Verificando estado del consentimiento…" : consentOn ? "Activado" : "Desactivado"}
+                onClick={handleConsentToggle}
+                disabled={savingConsent || loadingConsent}
+                className="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1 disabled:opacity-50"
+                style={{ backgroundColor: consentOn ? "#4A7FA5" : "#D1D5DB" }}
+              >
+                <span
+                  className="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
+                  style={{ transform: consentOn ? "translateX(22px)" : "translateX(3px)" }}
+                />
+              </button>
+            </div>
           </div>
 
           {consentMsg && (

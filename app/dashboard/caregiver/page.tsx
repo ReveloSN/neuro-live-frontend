@@ -37,6 +37,8 @@ interface Patient {
   error?: string;
 }
 
+type LinkedPatient = { id: number; patientId: number; linkType: string };
+
 const STATUS_STYLES: Record<string, { bg: string; color: string }> = {
   Normal: { bg: "#D1FAE5", color: "#065F46" },
   Riesgo: { bg: "#FEF3C7", color: "#92400E" },
@@ -491,6 +493,7 @@ export default function CaregiverDashboardPage() {
   const [activeTab, setActiveTab]           = useState<Tab>("Mis Pacientes");
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [linkedPatients, setLinkedPatients] = useState<LinkedPatient[]>([]);
   const [patientsLoading, setPatientsLoading] = useState(false);
   const [patientsError, setPatientsError] = useState<string | null>(null);
 
@@ -537,10 +540,16 @@ export default function CaregiverDashboardPage() {
       try {
         const links = await getMyLinks(token);
         const activeLinks = links.filter((link) => link.status === "ACTIVE" && link.patientId != null);
+        const normalizedLinks = activeLinks.map((link) => ({
+          id: link.id,
+          patientId: link.patientId as number,
+          linkType: link.linkType ?? "",
+        }));
 
         if (activeLinks.length === 0) {
           if (!active) return;
           setPatients([]);
+          setLinkedPatients([]);
           setSelectedPatient(null);
           return;
         }
@@ -593,6 +602,7 @@ export default function CaregiverDashboardPage() {
         );
 
         if (!active) return;
+        setLinkedPatients(normalizedLinks);
         setPatients(realPatients);
         setSelectedPatient((current) => {
           return current ? realPatients.find((patient) => patient.id === current.id) ?? null : null;
@@ -600,6 +610,7 @@ export default function CaregiverDashboardPage() {
       } catch (error) {
         if (!active) return;
         setPatients([]);
+        setLinkedPatients([]);
         setSelectedPatient(null);
         setPatientsError(resolveCaregiverError(error));
       } finally {
@@ -752,7 +763,7 @@ export default function CaregiverDashboardPage() {
         )}
 
         {activeTab === "Historial" && (
-          <HistorialView role="CAREGIVER" userToken={user.token} />
+          <HistorialView role="CAREGIVER" linkedPatients={linkedPatients} userToken={user.token} />
         )}
 
         {activeTab === "Configuración" && (

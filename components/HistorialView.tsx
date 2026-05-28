@@ -114,8 +114,9 @@ const PLACEHOLDER_SESSIONS: SessionRecord[] = [
 
 interface ClinicalPatient {
   id: string;
+  linkId?: string;
   name: string;
-  patientId?: number;
+  patientId: number;
   fromBackend?: boolean;
 }
 
@@ -127,6 +128,8 @@ interface CrisisEventRecord {
   valence: number; // 1–5 SAM scale
   arousal: number; // 1–5 SAM scale
 }
+
+type LinkedPatient = { id: number; patientId: number; linkType: string };
 
 // PLACEHOLDER: crisis events from GET /crises/patients/{patientId}
 const PLACEHOLDER_CRISIS_EVENTS: CrisisEventRecord[] = [
@@ -155,14 +158,19 @@ function formatBackendIntervention(value: string | null | undefined) {
   return value.replaceAll("_", " ").toLowerCase();
 }
 
+function clampSam(value: number | null | undefined) {
+  if (typeof value !== "number" || Number.isNaN(value)) return 3;
+  return Math.min(5, Math.max(1, value));
+}
+
 function mapBackendEvents(events: CrisisEventResponse[]): CrisisEventRecord[] {
   return events.map((event) => ({
     id: String(event.id),
     date: formatBackendDate(event.startedAt),
     duration: formatBackendDuration(event.durationSeconds),
     interventionType: formatBackendIntervention(event.interventionType),
-    valence: event.samValence ?? 0,
-    arousal: event.samArousal ?? 0,
+    valence: clampSam(event.samValence),
+    arousal: clampSam(event.samArousal),
   }));
 }
 
@@ -183,15 +191,15 @@ function mapBackendSessions(events: CrisisEventResponse[]): SessionRecord[] {
       crisisDuration: status === "Normal" ? undefined : formatBackendDuration(event.durationSeconds),
       interventionType: formatBackendIntervention(event.interventionType),
       sam: {
-        valence: event.samValence ?? 3,
-        arousal: event.samArousal ?? 3,
+        valence: clampSam(event.samValence),
+        arousal: clampSam(event.samArousal),
         dominance: 3,
       },
     };
   });
 }
 
-function useClinicalHistory(userToken?: string) {
+function useClinicalHistory(userToken?: string, linkedPatients?: LinkedPatient[]) {
   const [patients, setPatients] = useState<ClinicalPatient[]>([]);
   const [eventsByPatient, setEventsByPatient] = useState<Record<string, CrisisEventRecord[]>>({});
   const [loading, setLoading] = useState(false);
@@ -213,8 +221,15 @@ function useClinicalHistory(userToken?: string) {
       setLoading(true);
       setError(null);
       try {
-        const links = await getMyLinks(token);
-        const activeLinks = links.filter((link) => link.status === "ACTIVE" && link.patientId != null);
+        const activeLinks =
+          linkedPatients ??
+          (await getMyLinks(token))
+            .filter((link) => link.status === "ACTIVE" && link.patientId != null)
+            .map((link) => ({
+              id: link.id,
+              patientId: link.patientId as number,
+              linkType: link.linkType ?? "",
+            }));
 
         if (activeLinks.length === 0) {
           if (!active) return;
@@ -227,7 +242,8 @@ function useClinicalHistory(userToken?: string) {
         // Carga pacientes reales vinculados y evita mostrar eventos de ejemplo si hay datos reales.
         const realPatients: ClinicalPatient[] = activeLinks.map((link) => ({
           id: String(link.patientId),
-          patientId: link.patientId as number,
+          linkId: String(link.id),
+          patientId: link.patientId,
           name: `Paciente #${link.patientId}`,
           fromBackend: true,
         }));
@@ -263,7 +279,7 @@ function useClinicalHistory(userToken?: string) {
     return () => {
       active = false;
     };
-  }, [userToken]);
+  }, [userToken, linkedPatients]);
 
   return { patients, eventsByPatient, loading, error, usingBackend };
 }
@@ -532,10 +548,16 @@ function PatientHistorial({ userToken, refreshKey }: { userToken?: string; refre
 
 // ─── Caregiver view ────────────────────────────────────────────────────────────
 
-function CaregiverHistorial({ userToken }: { userToken?: string }) {
+function CaregiverHistorial({
+  linkedPatients,
+  userToken,
+}: {
+  linkedPatients?: LinkedPatient[];
+  userToken?: string;
+}) {
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [openEventIds, setOpenEventIds] = useState<Set<string>>(new Set());
-  const { patients, eventsByPatient, loading, error, usingBackend } = useClinicalHistory(userToken);
+  const { patients, eventsByPatient, loading, error, usingBackend } = useClinicalHistory(userToken, linkedPatients);
 
   function toggleEvent(id: string) {
     setOpenEventIds((prev) => {
@@ -697,10 +719,16 @@ function CaregiverHistorial({ userToken }: { userToken?: string }) {
 
 // ─── Doctor view ───────────────────────────────────────────────────────────────
 
-function DoctorHistorial({ userToken }: { userToken?: string }) {
+function DoctorHistorial({
+  linkedPatients,
+  userToken,
+}: {
+  linkedPatients?: LinkedPatient[];
+  userToken?: string;
+}) {
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [openEventIds, setOpenEventIds] = useState<Set<string>>(new Set());
-  const { patients, eventsByPatient, loading, error, usingBackend } = useClinicalHistory(userToken);
+  const { patients, eventsByPatient, loading, error, usingBackend } = useClinicalHistory(userToken, linkedPatients);
 
   function toggleEvent(id: string) {
     setOpenEventIds((prev) => {
@@ -866,14 +894,16 @@ export default function HistorialView({
   role,
   userToken,
   refreshKey,
+  linkedPatients,
 }: {
   role: HistorialRole;
   userToken?: string;
   refreshKey?: number;
+  linkedPatients?: LinkedPatient[];
 }) {
   if (role === "PATIENT" || role === "USER_PERSONAL")
     return <PatientHistorial userToken={userToken} refreshKey={refreshKey} />;
-  if (role === "CAREGIVER") return <CaregiverHistorial userToken={userToken} />;
-  if (role === "DOCTOR") return <DoctorHistorial userToken={userToken} />;
+  if (role === "CAREGIVER") return <CaregiverHistorial linkedPatients={linkedPatients} userToken={userToken} />;
+  if (role === "DOCTOR") return <DoctorHistorial linkedPatients={linkedPatients} userToken={userToken} />;
   return null;
 }
