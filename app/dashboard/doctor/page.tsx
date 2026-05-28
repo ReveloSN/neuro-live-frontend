@@ -540,7 +540,7 @@ export default function DoctorDashboardPage() {
         )}
 
         {activeTab === "Historial" && (
-          <HistorialView role="DOCTOR" linkedPatients={linkedPatients} />
+          <HistorialView role="DOCTOR" linkedPatients={linkedPatients} userToken={user.token} />
         )}
 
         {activeTab === "Configuración" && (

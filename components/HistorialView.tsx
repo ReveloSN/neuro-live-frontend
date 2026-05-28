@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useCrisisHistory } from "@/hooks/useCrisisHistory";
 
 export type HistorialRole = "PATIENT" | "USER_PERSONAL" | "CAREGIVER" | "DOCTOR";
 
@@ -107,26 +108,6 @@ const PLACEHOLDER_SESSIONS: SessionRecord[] = [
   },
 ];
 
-// ─── PLACEHOLDER data — CAREGIVER / DOCTOR ────────────────────────────────────
-// Replace with: GET /crises/patients/{patientId}
-
-interface CrisisEventRecord {
-  id: string;
-  date: string;
-  duration: string;
-  interventionType: string;
-  valence: number; // 1–5 SAM scale
-  arousal: number; // 1–5 SAM scale
-}
-
-// PLACEHOLDER: crisis events from GET /crises/patients/{patientId}
-const PLACEHOLDER_CRISIS_EVENTS: CrisisEventRecord[] = [
-  { id: "e1", date: "24 may 2026", duration: "4 min 30 s", interventionType: "Respiración guiada", valence: 2, arousal: 5 },
-  { id: "e2", date: "20 may 2026", duration: "2 min 15 s", interventionType: "Música ambiental",    valence: 3, arousal: 4 },
-  { id: "e3", date: "16 may 2026", duration: "6 min 10 s", interventionType: "Luz tenue",           valence: 2, arousal: 5 },
-  { id: "e4", date: "12 may 2026", duration: "1 min 50 s", interventionType: "Modo Calma",          valence: 4, arousal: 3 },
-];
-
 // ─── Shared sub-components ─────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: SessionStatus }) {
@@ -208,6 +189,28 @@ function EmptyState({ message }: { message: string }) {
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z" />
       </svg>
       <p className="text-sm font-semibold text-gray-500">{message}</p>
+    </div>
+  );
+}
+
+function LoadingSpinner() {
+  return (
+    <div className="flex items-center justify-center py-16">
+      <svg className="h-8 w-8 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="#4A7FA5" strokeWidth="4" />
+        <path className="opacity-75" fill="#4A7FA5" d="M4 12a8 8 0 018-8v8H4z" />
+      </svg>
+    </div>
+  );
+}
+
+function ErrorBanner({ message }: { message: string }) {
+  return (
+    <div
+      className="rounded-xl px-4 py-3 text-sm"
+      style={{ backgroundColor: "#FEE2E2", color: "#991B1B", border: "1px solid #FECACA" }}
+    >
+      {message}
     </div>
   );
 }
@@ -361,13 +364,25 @@ function PatientHistorial({ userToken, refreshKey }: { userToken?: string; refre
 
 // ─── Caregiver view ────────────────────────────────────────────────────────────
 
-function CaregiverHistorial({ linkedPatients }: { linkedPatients?: Array<{ id: number; patientId: number; linkType: string }> }) {
+function CaregiverHistorial({
+  linkedPatients,
+  userToken,
+}: {
+  linkedPatients?: Array<{ id: number; patientId: number; linkType: string }>;
+  userToken?: string;
+}) {
   const clinicalPatients = (linkedPatients ?? []).map((lp) => ({
-    id: String(lp.id),
+    linkId: String(lp.id),
+    patientId: lp.patientId,
     name: `Paciente ${lp.patientId}`,
   }));
-  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+  const [selectedLinkId, setSelectedLinkId] = useState<string | null>(null);
   const [openEventIds, setOpenEventIds] = useState<Set<string>>(new Set());
+
+  const selectedPatientId =
+    clinicalPatients.find((p) => p.linkId === selectedLinkId)?.patientId ?? null;
+
+  const { events, loading, error } = useCrisisHistory(selectedPatientId, userToken);
 
   function toggleEvent(id: string) {
     setOpenEventIds((prev) => {
@@ -376,14 +391,6 @@ function CaregiverHistorial({ linkedPatients }: { linkedPatients?: Array<{ id: n
       return next;
     });
   }
-
-  function handleExportCSV() {
-    // PLACEHOLDER: replace with GET /crises/patients/{patientId}?format=csv
-    console.log("[PLACEHOLDER] Exportar CSV — GET /crises/patients/{patientId}?format=csv");
-  }
-
-  // PLACEHOLDER: events from GET /crises/patients/{patientId}
-  const events = PLACEHOLDER_CRISIS_EVENTS;
 
   if (clinicalPatients.length === 0) {
     return (
@@ -403,11 +410,11 @@ function CaregiverHistorial({ linkedPatients }: { linkedPatients?: Array<{ id: n
         <p className="mb-2 text-xs font-medium text-gray-500">Seleccionar paciente</p>
         <div className="flex flex-wrap gap-2">
           {clinicalPatients.map((p) => {
-            const isSelected = selectedPatientId === p.id;
+            const isSelected = selectedLinkId === p.linkId;
             return (
               <button
-                key={p.id}
-                onClick={() => setSelectedPatientId(isSelected ? null : p.id)}
+                key={p.linkId}
+                onClick={() => setSelectedLinkId(isSelected ? null : p.linkId)}
                 aria-pressed={isSelected}
                 className="rounded-xl px-4 py-2 text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
                 style={{
@@ -423,10 +430,14 @@ function CaregiverHistorial({ linkedPatients }: { linkedPatients?: Array<{ id: n
         </div>
       </div>
 
-      {selectedPatientId === null ? (
+      {selectedLinkId === null ? (
         <EmptyState message="Selecciona un paciente para ver su historial" />
+      ) : loading ? (
+        <LoadingSpinner />
+      ) : error ? (
+        <ErrorBanner message={error} />
       ) : events.length === 0 ? (
-        <EmptyState message="No hay eventos registrados para este paciente" />
+        <EmptyState message="No hay eventos registrados aún para este paciente" />
       ) : (
         <>
           {/* Crisis events */}
@@ -450,7 +461,6 @@ function CaregiverHistorial({ linkedPatients }: { linkedPatients?: Array<{ id: n
 
                     {/* SAM mini progress bars */}
                     <div className="flex-1 min-w-[180px] max-w-[260px] space-y-1.5">
-                      {/* PLACEHOLDER: SAM scores from GET /crises/patients/{patientId} */}
                       <SAMProgressBar label="Valencia"   value={ev.valence} color="#4A7FA5" />
                       <SAMProgressBar label="Activación" value={ev.arousal} color="#F59E0B" />
                     </div>
@@ -490,7 +500,6 @@ function CaregiverHistorial({ linkedPatients }: { linkedPatients?: Array<{ id: n
                       <div>
                         <p className="mb-2 text-xs font-semibold text-gray-500">Escala SAM</p>
                         <div className="flex gap-2">
-                          {/* PLACEHOLDER: SAM scores from GET /crises/patients/{patientId} */}
                           <SAMCard label="Valencia"   options={SAM_VALENCE} score={ev.valence} />
                           <SAMCard label="Activación" options={SAM_AROUSAL} score={ev.arousal} />
                         </div>
@@ -501,25 +510,6 @@ function CaregiverHistorial({ linkedPatients }: { linkedPatients?: Array<{ id: n
               );
             })}
           </ul>
-
-          {/* Export CSV button — visual only */}
-          <div className="flex justify-end">
-            {/* PLACEHOLDER: replace with GET /crises/patients/{patientId}?format=csv */}
-            <button
-              onClick={handleExportCSV}
-              className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
-              style={{
-                backgroundColor: "#D6E8F5",
-                color: "#2d5a7a",
-                border: "1.5px solid #4A7FA5",
-              }}
-            >
-              <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-              </svg>
-              Exportar CSV
-            </button>
-          </div>
         </>
       )}
     </div>
@@ -528,13 +518,25 @@ function CaregiverHistorial({ linkedPatients }: { linkedPatients?: Array<{ id: n
 
 // ─── Doctor view ───────────────────────────────────────────────────────────────
 
-function DoctorHistorial({ linkedPatients }: { linkedPatients?: Array<{ id: number; patientId: number; linkType: string }> }) {
+function DoctorHistorial({
+  linkedPatients,
+  userToken,
+}: {
+  linkedPatients?: Array<{ id: number; patientId: number; linkType: string }>;
+  userToken?: string;
+}) {
   const clinicalPatients = (linkedPatients ?? []).map((lp) => ({
-    id: String(lp.id),
+    linkId: String(lp.id),
+    patientId: lp.patientId,
     name: `Paciente ${lp.patientId}`,
   }));
-  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+  const [selectedLinkId, setSelectedLinkId] = useState<string | null>(null);
   const [openEventIds, setOpenEventIds] = useState<Set<string>>(new Set());
+
+  const selectedPatientId =
+    clinicalPatients.find((p) => p.linkId === selectedLinkId)?.patientId ?? null;
+
+  const { events, loading, error } = useCrisisHistory(selectedPatientId, userToken);
 
   function toggleEvent(id: string) {
     setOpenEventIds((prev) => {
@@ -543,14 +545,6 @@ function DoctorHistorial({ linkedPatients }: { linkedPatients?: Array<{ id: numb
       return next;
     });
   }
-
-  function handleExportCSV() {
-    // PLACEHOLDER: replace with GET /crises/patients/{patientId}/analysis?format=csv
-    console.log("[PLACEHOLDER] Exportar CSV — GET /crises/patients/{patientId}/analysis?format=csv");
-  }
-
-  // PLACEHOLDER: events from GET /crises/patients/{patientId}/analysis
-  const events = PLACEHOLDER_CRISIS_EVENTS;
 
   if (clinicalPatients.length === 0) {
     return (
@@ -570,11 +564,11 @@ function DoctorHistorial({ linkedPatients }: { linkedPatients?: Array<{ id: numb
         <p className="mb-2 text-xs font-medium text-gray-500">Seleccionar paciente</p>
         <div className="flex flex-wrap gap-2">
           {clinicalPatients.map((p) => {
-            const isSelected = selectedPatientId === p.id;
+            const isSelected = selectedLinkId === p.linkId;
             return (
               <button
-                key={p.id}
-                onClick={() => setSelectedPatientId(isSelected ? null : p.id)}
+                key={p.linkId}
+                onClick={() => setSelectedLinkId(isSelected ? null : p.linkId)}
                 aria-pressed={isSelected}
                 className="rounded-xl px-4 py-2 text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
                 style={{
@@ -590,10 +584,14 @@ function DoctorHistorial({ linkedPatients }: { linkedPatients?: Array<{ id: numb
         </div>
       </div>
 
-      {selectedPatientId === null ? (
+      {selectedLinkId === null ? (
         <EmptyState message="Selecciona un paciente para ver su historial clínico" />
+      ) : loading ? (
+        <LoadingSpinner />
+      ) : error ? (
+        <ErrorBanner message={error} />
       ) : events.length === 0 ? (
-        <EmptyState message="No hay eventos registrados para este paciente" />
+        <EmptyState message="No hay eventos de crisis registrados aún" />
       ) : (
         <>
           {/* Crisis events */}
@@ -617,7 +615,6 @@ function DoctorHistorial({ linkedPatients }: { linkedPatients?: Array<{ id: numb
 
                     {/* SAM mini progress bars */}
                     <div className="flex-1 min-w-[180px] max-w-[260px] space-y-1.5">
-                      {/* PLACEHOLDER: SAM scores from GET /crises/patients/{patientId}/analysis */}
                       <SAMProgressBar label="Valencia"   value={ev.valence} color="#4A7FA5" />
                       <SAMProgressBar label="Activación" value={ev.arousal} color="#F59E0B" />
                     </div>
@@ -657,7 +654,6 @@ function DoctorHistorial({ linkedPatients }: { linkedPatients?: Array<{ id: numb
                       <div>
                         <p className="mb-2 text-xs font-semibold text-gray-500">Escala SAM</p>
                         <div className="flex gap-2">
-                          {/* PLACEHOLDER: SAM scores from GET /crises/patients/{patientId}/analysis */}
                           <SAMCard label="Valencia"   options={SAM_VALENCE} score={ev.valence} />
                           <SAMCard label="Activación" options={SAM_AROUSAL} score={ev.arousal} />
                         </div>
@@ -668,25 +664,6 @@ function DoctorHistorial({ linkedPatients }: { linkedPatients?: Array<{ id: numb
               );
             })}
           </ul>
-
-          {/* Export CSV button — visual only */}
-          <div className="flex justify-end">
-            {/* PLACEHOLDER: replace with GET /crises/patients/{patientId}/analysis?format=csv */}
-            <button
-              onClick={handleExportCSV}
-              className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
-              style={{
-                backgroundColor: "#D6E8F5",
-                color: "#2d5a7a",
-                border: "1.5px solid #4A7FA5",
-              }}
-            >
-              <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-              </svg>
-              Exportar CSV
-            </button>
-          </div>
         </>
       )}
     </div>
@@ -708,7 +685,9 @@ export default function HistorialView({
 }) {
   if (role === "PATIENT" || role === "USER_PERSONAL")
     return <PatientHistorial userToken={userToken} refreshKey={refreshKey} />;
-  if (role === "CAREGIVER") return <CaregiverHistorial linkedPatients={linkedPatients} />;
-  if (role === "DOCTOR") return <DoctorHistorial linkedPatients={linkedPatients} />;
+  if (role === "CAREGIVER")
+    return <CaregiverHistorial linkedPatients={linkedPatients} userToken={userToken} />;
+  if (role === "DOCTOR")
+    return <DoctorHistorial linkedPatients={linkedPatients} userToken={userToken} />;
   return null;
 }

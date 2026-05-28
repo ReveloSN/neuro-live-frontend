@@ -576,7 +576,7 @@ export default function CaregiverDashboardPage() {
         )}
 
         {activeTab === "Historial" && (
-          <HistorialView role="CAREGIVER" linkedPatients={linkedPatients} />
+          <HistorialView role="CAREGIVER" linkedPatients={linkedPatients} userToken={user.token} />
         )}
 
         {activeTab === "Configuración" && (
