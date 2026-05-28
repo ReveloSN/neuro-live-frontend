@@ -15,8 +15,6 @@ const PLACEHOLDER_BPM = 74; // PLACEHOLDER: real-time BPM from wearable sensor
 const PLACEHOLDER_SPO2 = 98; // PLACEHOLDER: real-time SpO2 from wearable sensor
 const PLACEHOLDER_BPM_SERIES = [72, 75, 71, 74, 78, 76, 73, 77, 80, 78, 75, 72, 74, 76, 73, 71, 74, 77, 75, 73]; // PLACEHOLDER: streaming BPM data
 const PLACEHOLDER_SPO2_SERIES = [98, 97, 98, 99, 98, 97, 98, 98, 97, 98, 99, 98, 97, 98, 98, 99, 98, 97, 98, 98]; // PLACEHOLDER: streaming SpO2 data
-const PLACEHOLDER_DWELL_TIME_PCT = 68; // PLACEHOLDER: dwell time % from keystroke analysis
-const PLACEHOLDER_FLIGHT_TIME_PCT = 45; // PLACEHOLDER: flight time % from keystroke analysis
 const PLACEHOLDER_SESSION_GOAL_MIN = 45; // PLACEHOLDER: session goal minutes from user settings
 const PLACEHOLDER_ZEN_TIP = "Respira profundo. Estás en un espacio seguro. Cada palabra que escribes es un paso valioso hacia tu bienestar."; // PLACEHOLDER: rotating zen tips from API
 const PLACEHOLDER_STATUS: PatientStatus = "Normal"; // PLACEHOLDER: real-time status from biometric analysis API
@@ -88,6 +86,9 @@ export default function PatientDashboardPage() {
   const [sessionSeconds, setSessionSeconds] = useState(0); // PLACEHOLDER: session seconds synced with API
   const [calmModeActive, setCalmModeActive] = useState(false);
   const [historialKey, setHistorialKey] = useState(0);
+  const [patientId, setPatientId] = useState<number | undefined>(undefined);
+  const [dwellTimePct, setDwellTimePct] = useState(0);
+  const [flightTimePct, setFlightTimePct] = useState(0);
 
   function handleLogout() {
     logout();
@@ -102,6 +103,16 @@ export default function PatientDashboardPage() {
     const id = setInterval(() => setSessionSeconds((s) => s + 1), 1000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    fetch("https://neurolive-backend.azurewebsites.net/users/me", {
+      headers: { Authorization: `Bearer ${user.token}` },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { id?: number } | null) => { if (data?.id) setPatientId(data.id); })
+      .catch(() => {});
+  }, [user]);
 
   if (loading || !user) {
     return (
@@ -208,7 +219,14 @@ export default function PatientDashboardPage() {
         {/* ── Left: Text Editor ────────────────────────────────────────────── */}
         <div className="lg:col-span-3 flex flex-col gap-3">
 
-          <WorkspaceEditor userId={user.token} />
+          <WorkspaceEditor
+            userId={patientId}
+            userToken={user.token}
+            onMetricsUpdate={(dwell, flight) => {
+              setDwellTimePct(dwell);
+              setFlightTimePct(flight);
+            }}
+          />
 
           {/* Calm assistant message */}
           <div
@@ -323,23 +341,21 @@ export default function PatientDashboardPage() {
               <div>
                 <div className="mb-1.5 flex items-center justify-between text-xs">
                   <span className="text-gray-500">Dwell Time</span>
-                  {/* PLACEHOLDER: dwell time % from keystroke dynamics analysis */}
                   <span className="font-semibold" style={{ color: "#4A7FA5" }}>
-                    {PLACEHOLDER_DWELL_TIME_PCT}%
+                    {Math.round(dwellTimePct)}%
                   </span>
                 </div>
-                <ProgressBar value={PLACEHOLDER_DWELL_TIME_PCT} color="#4A7FA5" />
+                <ProgressBar value={dwellTimePct} color="#4A7FA5" />
               </div>
 
               <div>
                 <div className="mb-1.5 flex items-center justify-between text-xs">
                   <span className="text-gray-500">Flight Time</span>
-                  {/* PLACEHOLDER: flight time % from keystroke dynamics analysis */}
                   <span className="font-semibold" style={{ color: "#34D399" }}>
-                    {PLACEHOLDER_FLIGHT_TIME_PCT}%
+                    {Math.round(flightTimePct)}%
                   </span>
                 </div>
-                <ProgressBar value={PLACEHOLDER_FLIGHT_TIME_PCT} color="#34D399" />
+                <ProgressBar value={flightTimePct} color="#34D399" />
               </div>
             </div>
           </div>

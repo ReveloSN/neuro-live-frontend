@@ -14,11 +14,20 @@ interface Session {
   savedAt: string;
 }
 
+interface KeystrokeEntry {
+  dwellTime: number;
+  flightTime: number | null;
+  isError: boolean;
+}
+
 interface WorkspaceEditorProps {
-  userId: string;
+  userId?: number;
+  userToken?: string;
+  onMetricsUpdate?: (dwellTimePct: number, flightTimePct: number) => void;
 }
 
 const MAX_SESSIONS = 10;
+const BACKEND_URL = "https://neurolive-backend.azurewebsites.net";
 
 function ResizableImageView({ node }: NodeViewProps) {
   return (
@@ -60,8 +69,8 @@ const ResizableImage = Image.extend({
   },
 });
 
-export default function WorkspaceEditor({ userId }: WorkspaceEditorProps) {
-  const storageKey = `nl_sessions_${userId}`;
+export default function WorkspaceEditor({ userId, userToken, onMetricsUpdate }: WorkspaceEditorProps) {
+  const storageKey = `nl_sessions_${userToken ?? ""}`;
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [sessionTitle, setSessionTitle] = useState("");
@@ -70,6 +79,12 @@ export default function WorkspaceEditor({ userId }: WorkspaceEditorProps) {
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const sessionIdRef = useRef<string>(crypto.randomUUID());
+  const keyDownTimesRef = useRef<Map<string, { time: number; flightTime: number | null }>>(new Map());
+  const lastKeyUpTimeRef = useRef<number | null>(null);
+  const keystrokeBufferRef = useRef<KeystrokeEntry[]>([]);
+  const onMetricsUpdateRef = useRef(onMetricsUpdate);
+  useEffect(() => { onMetricsUpdateRef.current = onMetricsUpdate; });
 
   function loadSessions(): Session[] {
     try {
@@ -125,6 +140,77 @@ export default function WorkspaceEditor({ userId }: WorkspaceEditorProps) {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, storageKey]);
+
+  useEffect(() => {
+    if (!editor) return;
+    const el = editor.view.dom as HTMLElement;
+
+    function onKeyDown(e: KeyboardEvent) {
+      const now = performance.now();
+      const flightTime = lastKeyUpTimeRef.current !== null ? now - lastKeyUpTimeRef.current : null;
+      keyDownTimesRef.current.set(e.key, { time: now, flightTime });
+    }
+
+    function onKeyUp(e: KeyboardEvent) {
+      const keyInfo = keyDownTimesRef.current.get(e.key);
+      if (!keyInfo) return;
+      const now = performance.now();
+      const dwellTime = now - keyInfo.time;
+      keyDownTimesRef.current.delete(e.key);
+      lastKeyUpTimeRef.current = now;
+      const buffer = keystrokeBufferRef.current;
+      buffer.push({ dwellTime, flightTime: keyInfo.flightTime, isError: e.key === "Backspace" });
+      if (buffer.length > 20) buffer.shift();
+    }
+
+    el.addEventListener("keydown", onKeyDown);
+    el.addEventListener("keyup", onKeyUp);
+    return () => {
+      el.removeEventListener("keydown", onKeyDown);
+      el.removeEventListener("keyup", onKeyUp);
+    };
+  }, [editor]);
+
+  useEffect(() => {
+    if (!userId || !userToken) return;
+    const sessionId = sessionIdRef.current;
+    const id = setInterval(async () => {
+      const buffer = keystrokeBufferRef.current;
+      if (buffer.length < 5) return;
+      const snapshot = [...buffer];
+      keystrokeBufferRef.current = [];
+      const dwellTimes = snapshot.map((k) => k.dwellTime);
+      const flightTimes = snapshot.map((k) => k.flightTime).filter((ft): ft is number => ft !== null);
+      const errorCount = snapshot.filter((k) => k.isError).length;
+      const avgDwellTime = dwellTimes.reduce((a, b) => a + b, 0) / dwellTimes.length;
+      const avgFlightTime = flightTimes.length > 0 ? flightTimes.reduce((a, b) => a + b, 0) / flightTimes.length : 0;
+      const errorRate = errorCount / snapshot.length;
+      const dwellTimePct = Math.min(100, (avgDwellTime / 300) * 100);
+      const flightTimePct = Math.min(100, (avgFlightTime / 500) * 100);
+      onMetricsUpdateRef.current?.(dwellTimePct, flightTimePct);
+      try {
+        await fetch(`${BACKEND_URL}/biometrics/keystrokes`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${userToken}`,
+          },
+          body: JSON.stringify({
+            userId,
+            sessionId,
+            dwellTime: avgDwellTime,
+            flightTime: avgFlightTime,
+            errorCount,
+            errorRate,
+            timestamp: new Date().toISOString(),
+          }),
+        });
+      } catch {
+        // silent
+      }
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [userId, userToken]);
 
   function handleSave() {
     if (!editor) return;

@@ -11,8 +11,6 @@ import ConfiguracionView from "@/components/ConfiguracionView";
 // ---------------------------------------------------------------------------
 // PLACEHOLDER DATA — replace with real API calls when backend is ready
 // ---------------------------------------------------------------------------
-const PLACEHOLDER_DWELL_TIME_PCT = 68; // PLACEHOLDER: dwell time % from keystroke analysis
-const PLACEHOLDER_FLIGHT_TIME_PCT = 45; // PLACEHOLDER: flight time % from keystroke analysis
 const PLACEHOLDER_SESSION_GOAL_MIN = 45; // PLACEHOLDER: session goal minutes from user settings
 const PLACEHOLDER_ZEN_TIP = "Recuerda respirar profundo. Cada palabra que escribes es un paso hacia tu bienestar mental."; // PLACEHOLDER: rotating zen tips from API
 // ---------------------------------------------------------------------------
@@ -42,6 +40,9 @@ export default function PersonalDashboardPage() {
   const [sessionSeconds, setSessionSeconds] = useState(0); // PLACEHOLDER: session seconds synced with API
   const [calmModeActive, setCalmModeActive] = useState(false);
   const [historialKey, setHistorialKey] = useState(0);
+  const [userId, setUserId] = useState<number | undefined>(undefined);
+  const [dwellTimePct, setDwellTimePct] = useState(0);
+  const [flightTimePct, setFlightTimePct] = useState(0);
 
   function handleLogout() {
     logout();
@@ -56,6 +57,16 @@ export default function PersonalDashboardPage() {
     const id = setInterval(() => setSessionSeconds((s) => s + 1), 1000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    fetch("https://neurolive-backend.azurewebsites.net/users/me", {
+      headers: { Authorization: `Bearer ${user.token}` },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { id?: number } | null) => { if (data?.id) setUserId(data.id); })
+      .catch(() => {});
+  }, [user]);
 
   if (loading || !user) {
     return (
@@ -150,7 +161,14 @@ export default function PersonalDashboardPage() {
         {/* ── Left: Text Editor ────────────────────────────────────────────── */}
         <div className="lg:col-span-3 flex flex-col gap-3">
 
-          <WorkspaceEditor userId={user.token} />
+          <WorkspaceEditor
+            userId={userId}
+            userToken={user.token}
+            onMetricsUpdate={(dwell, flight) => {
+              setDwellTimePct(dwell);
+              setFlightTimePct(flight);
+            }}
+          />
 
           {/* Calm assistant message */}
           <div
@@ -235,23 +253,21 @@ export default function PersonalDashboardPage() {
               <div>
                 <div className="mb-1.5 flex items-center justify-between text-xs">
                   <span className="text-gray-500">Dwell Time</span>
-                  {/* PLACEHOLDER: dwell time % from keystroke dynamics analysis */}
                   <span className="font-semibold" style={{ color: "#4A7FA5" }}>
-                    {PLACEHOLDER_DWELL_TIME_PCT}%
+                    {Math.round(dwellTimePct)}%
                   </span>
                 </div>
-                <ProgressBar value={PLACEHOLDER_DWELL_TIME_PCT} color="#4A7FA5" />
+                <ProgressBar value={dwellTimePct} color="#4A7FA5" />
               </div>
 
               <div>
                 <div className="mb-1.5 flex items-center justify-between text-xs">
                   <span className="text-gray-500">Flight Time</span>
-                  {/* PLACEHOLDER: flight time % from keystroke dynamics analysis */}
                   <span className="font-semibold" style={{ color: "#34D399" }}>
-                    {PLACEHOLDER_FLIGHT_TIME_PCT}%
+                    {Math.round(flightTimePct)}%
                   </span>
                 </div>
-                <ProgressBar value={PLACEHOLDER_FLIGHT_TIME_PCT} color="#34D399" />
+                <ProgressBar value={flightTimePct} color="#34D399" />
               </div>
             </div>
           </div>
