@@ -441,6 +441,43 @@ export default function CaregiverDashboardPage() {
     }
   }, [loading, user, router]);
 
+  // Load per-patient environmental settings when selected patient changes
+  useEffect(() => {
+    if (!selectedPatient) return;
+    try {
+      const raw = localStorage.getItem(`nl_env_${selectedPatient.id}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed.lightOn === "boolean") setLightOn(parsed.lightOn);
+        if (typeof parsed.activeColor === "string") setActiveColor(parsed.activeColor);
+        if (
+          typeof parsed.activeAudio === "string" &&
+          (AUDIO_OPTIONS as readonly string[]).includes(parsed.activeAudio)
+        )
+          setActiveAudio(parsed.activeAudio as AudioOption);
+        return;
+      }
+    } catch {
+      // ignore malformed entries
+    }
+    setLightOn(true);
+    setActiveColor("#4ADE80");
+    setActiveAudio("Silencio");
+  }, [selectedPatient]);
+
+  // Save per-patient environmental settings whenever they change
+  useEffect(() => {
+    if (!selectedPatient) return;
+    try {
+      localStorage.setItem(
+        `nl_env_${selectedPatient.id}`,
+        JSON.stringify({ lightOn, activeColor, activeAudio })
+      );
+    } catch {
+      // localStorage unavailable
+    }
+  }, [lightOn, activeColor, activeAudio, selectedPatient]);
+
   if (loading || !user) {
     return (
       <div

@@ -70,7 +70,8 @@ export default function ConfiguracionView({
   }));
   const [threshPatientId, setThreshPatientId] = useState<string | null>(null);
   const [thresholds, setThresholds] = useState<Record<string, ThresholdValues>>({});
-  const [threshSaved, setThreshSaved] = useState(false);
+  const [savingThresh, setSavingThresh] = useState(false);
+  const [threshMsg, setThreshMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   useEffect(() => {
     async function fetchProfile() {
@@ -195,21 +196,48 @@ export default function ConfiguracionView({
     }));
   }
 
-  function handleSaveThresholds() {
+  async function handleSaveThresholds() {
     if (!threshPatientId) return;
+    const lp = (linkedPatients ?? []).find((p) => String(p.id) === threshPatientId);
+    if (!lp) return;
+    const realPatientId = lp.patientId;
     const patient = clinicalPatients.find((p) => p.id === threshPatientId);
     const values = thresholds[threshPatientId] ?? DEFAULT_THRESHOLDS;
-    if (patient) {
-      try {
-        localStorage.setItem(`nl_thresholds_${patient.name}`, JSON.stringify(values));
-      } catch {
-        // localStorage unavailable — continue without persisting
+    setSavingThresh(true);
+    try {
+      const res = await fetch(`${API_BASE}/biometrics/patients/${realPatientId}/thresholds`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          bpmMin: values.bpmMin,
+          bpmMax: values.bpmMax,
+          spo2Min: values.spo2Min,
+          errorRateMax: 0.3,
+        }),
+      });
+      if (res.ok) {
+        if (patient) {
+          try {
+            localStorage.setItem(`nl_thresholds_${patient.name}`, JSON.stringify(values));
+          } catch {
+            // localStorage unavailable
+          }
+        }
+        setThreshMsg({ text: "Umbrales guardados correctamente", ok: true });
+        setTimeout(() => setThreshMsg(null), 3000);
+      } else if (res.status === 403) {
+        setThreshMsg({ text: "No tienes permiso para configurar umbrales de este paciente", ok: false });
+      } else {
+        setThreshMsg({ text: "Error al guardar los umbrales. Intenta de nuevo.", ok: false });
       }
+    } catch {
+      setThreshMsg({ text: "Error al guardar los umbrales. Intenta de nuevo.", ok: false });
+    } finally {
+      setSavingThresh(false);
     }
-    // PLACEHOLDER: POST /biometrics/patients/{threshPatientId}/thresholds
-    //   body: values
-    setThreshSaved(true);
-    setTimeout(() => setThreshSaved(false), 2000);
   }
 
   const displayName = profile?.name ?? user.name;
@@ -563,15 +591,27 @@ export default function ConfiguracionView({
                 </div>
               </div>
 
-              {/* PLACEHOLDER: POST /biometrics/patients/{threshPatientId}/thresholds */}
               <button
                 onClick={handleSaveThresholds}
-                disabled={threshHasError}
+                disabled={threshHasError || savingThresh}
                 className="rounded-xl px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
-                style={{ backgroundColor: threshSaved ? "#22C55E" : "#4A7FA5" }}
+                style={{ backgroundColor: "#4A7FA5" }}
               >
-                {threshSaved ? "¡Guardado!" : "Guardar umbrales"}
+                {savingThresh ? "Guardando…" : "Guardar umbrales"}
               </button>
+
+              {threshMsg && (
+                <p
+                  className="rounded-lg px-3 py-2 text-xs font-medium"
+                  style={{
+                    color: threshMsg.ok ? "#065F46" : "#991B1B",
+                    backgroundColor: threshMsg.ok ? "#D1FAE5" : "#FEE2E2",
+                  }}
+                  role="status"
+                >
+                  {threshMsg.text}
+                </p>
+              )}
             </div>
           )}
         </section>
