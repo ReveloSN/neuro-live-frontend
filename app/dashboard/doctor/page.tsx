@@ -5,46 +5,16 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import HistorialView from "@/components/HistorialView";
 import ConfiguracionView from "@/components/ConfiguracionView";
+import { useLinkedPatients } from "@/hooks/useLinkedPatients";
 
-// ---------------------------------------------------------------------------
-// PLACEHOLDER DATA — replace with GET /doctor/patients
-// ---------------------------------------------------------------------------
 interface Patient {
   id: string;
   name: string;
   status: "Normal" | "Riesgo" | "Crisis";
-  // PLACEHOLDER: replace with GET /patients/{id}/biometric-evolution?from=&to=
   evolutionDates: string[];
   bpmSeries: number[];
   spo2Series: number[];
 }
-
-const PLACEHOLDER_PATIENTS: Patient[] = [
-  {
-    id: "p1",
-    name: "María González",
-    status: "Normal",
-    evolutionDates: ["01/03", "06/03", "12/03", "18/03", "24/03", "30/03"],
-    bpmSeries: [72, 71, 73, 70, 74, 72],
-    spo2Series: [98, 99, 98, 99, 98, 98],
-  },
-  {
-    id: "p2",
-    name: "Carlos Ruiz",
-    status: "Riesgo",
-    evolutionDates: ["01/03", "06/03", "12/03", "18/03", "24/03", "30/03"],
-    bpmSeries: [80, 85, 88, 92, 95, 93],
-    spo2Series: [97, 96, 95, 94, 94, 95],
-  },
-  {
-    id: "p3",
-    name: "Ana Martínez",
-    status: "Crisis",
-    evolutionDates: ["01/03", "06/03", "12/03", "18/03", "24/03", "30/03"],
-    bpmSeries: [85, 92, 100, 108, 112, 110],
-    spo2Series: [96, 94, 92, 91, 90, 91],
-  },
-];
 
 // PLACEHOLDER: replace with GET /patients/{id}/crisis-events?from=&to=
 interface CrisisEvent {
@@ -174,6 +144,18 @@ function EvolutionChart({
 export default function DoctorDashboardPage() {
   const { user, loading, logout } = useAuth();
   const router = useRouter();
+
+  const { patients: linkedPatients, loading: patientsLoading, error: patientsError } =
+    useLinkedPatients(user?.token ?? "", user?.role ?? "");
+
+  const patients: Patient[] = linkedPatients.map((lp) => ({
+    id: String(lp.id),
+    name: `Paciente ${lp.patientId}`,
+    status: "Normal" as const,
+    evolutionDates: ["", ""],
+    bpmSeries: [0, 0],
+    spo2Series: [0, 0],
+  }));
 
   const [activeTab, setActiveTab] = useState<Tab>("Mis Pacientes");
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
@@ -309,39 +291,58 @@ export default function DoctorDashboardPage() {
               {/* Patient selector */}
               <div className="flex-1 min-w-[240px]">
                 <p className="mb-2 text-xs font-medium text-gray-500">Paciente</p>
-                {/* PLACEHOLDER patient list — replace with GET /doctor/patients */}
-                <div className="flex flex-wrap gap-2">
-                  {PLACEHOLDER_PATIENTS.map((p) => {
-                    const s = STATUS_STYLES[p.status];
-                    const isSelected = selectedPatient?.id === p.id;
-                    return (
-                      <button
-                        key={p.id}
-                        onClick={() => setSelectedPatient(isSelected ? null : p)}
-                        aria-pressed={isSelected}
-                        className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
-                        style={{
-                          backgroundColor: isSelected ? "#D6E8F5" : "#ffffff",
-                          border: `1.5px solid ${isSelected ? "#4A7FA5" : "#E5E7EB"}`,
-                          color: isSelected ? "#2d5a7a" : "#374151",
-                        }}
-                      >
-                        <span
-                          className="h-2 w-2 shrink-0 rounded-full"
-                          style={{ backgroundColor: s.color }}
-                          aria-hidden="true"
-                        />
-                        {p.name}
-                        <span
-                          className="rounded-full px-1.5 py-0.5 text-xs font-semibold"
-                          style={{ backgroundColor: s.bg, color: s.color }}
+                {patientsLoading && (
+                  <div className="flex items-center gap-2 text-sm text-gray-400">
+                    <div
+                      className="h-4 w-4 animate-spin rounded-full border-2"
+                      style={{ borderColor: "#4A7FA5", borderTopColor: "transparent" }}
+                      aria-label="Cargando pacientes"
+                    />
+                    Cargando pacientes…
+                  </div>
+                )}
+                {!patientsLoading && patientsError && (
+                  <p className="text-sm text-red-600">{patientsError}</p>
+                )}
+                {!patientsLoading && !patientsError && patients.length === 0 && (
+                  <p className="text-sm text-gray-500">
+                    No tienes pacientes vinculados aún.
+                  </p>
+                )}
+                {!patientsLoading && !patientsError && patients.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {patients.map((p) => {
+                      const s = STATUS_STYLES[p.status];
+                      const isSelected = selectedPatient?.id === p.id;
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={() => setSelectedPatient(isSelected ? null : p)}
+                          aria-pressed={isSelected}
+                          className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
+                          style={{
+                            backgroundColor: isSelected ? "#D6E8F5" : "#ffffff",
+                            border: `1.5px solid ${isSelected ? "#4A7FA5" : "#E5E7EB"}`,
+                            color: isSelected ? "#2d5a7a" : "#374151",
+                          }}
                         >
-                          {p.status}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+                          <span
+                            className="h-2 w-2 shrink-0 rounded-full"
+                            style={{ backgroundColor: s.color }}
+                            aria-hidden="true"
+                          />
+                          {p.name}
+                          <span
+                            className="rounded-full px-1.5 py-0.5 text-xs font-semibold"
+                            style={{ backgroundColor: s.bg, color: s.color }}
+                          >
+                            {p.status}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Date range */}
@@ -539,11 +540,11 @@ export default function DoctorDashboardPage() {
         )}
 
         {activeTab === "Historial" && (
-          <HistorialView role="DOCTOR" />
+          <HistorialView role="DOCTOR" linkedPatients={linkedPatients} />
         )}
 
         {activeTab === "Configuración" && (
-          <ConfiguracionView role="DOCTOR" user={user} token={user.token} />
+          <ConfiguracionView role="DOCTOR" user={user} token={user.token} linkedPatients={linkedPatients} />
         )}
 
       </main>

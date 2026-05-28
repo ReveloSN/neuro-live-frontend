@@ -110,18 +110,6 @@ const PLACEHOLDER_SESSIONS: SessionRecord[] = [
 // ─── PLACEHOLDER data — CAREGIVER / DOCTOR ────────────────────────────────────
 // Replace with: GET /crises/patients/{patientId}
 
-interface ClinicalPatient {
-  id: string;
-  name: string;
-}
-
-// PLACEHOLDER: patient list from GET /doctor/patients
-const PLACEHOLDER_CLINICAL_PATIENTS: ClinicalPatient[] = [
-  { id: "p1", name: "María González" },
-  { id: "p2", name: "Carlos Ruiz"    },
-  { id: "p3", name: "Ana Martínez"  },
-];
-
 interface CrisisEventRecord {
   id: string;
   date: string;
@@ -373,7 +361,11 @@ function PatientHistorial({ userToken, refreshKey }: { userToken?: string; refre
 
 // ─── Caregiver view ────────────────────────────────────────────────────────────
 
-function CaregiverHistorial() {
+function CaregiverHistorial({ linkedPatients }: { linkedPatients?: Array<{ id: number; patientId: number; linkType: string }> }) {
+  const clinicalPatients = (linkedPatients ?? []).map((lp) => ({
+    id: String(lp.id),
+    name: `Paciente ${lp.patientId}`,
+  }));
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [openEventIds, setOpenEventIds] = useState<Set<string>>(new Set());
 
@@ -393,6 +385,15 @@ function CaregiverHistorial() {
   // PLACEHOLDER: events from GET /crises/patients/{patientId}
   const events = PLACEHOLDER_CRISIS_EVENTS;
 
+  if (clinicalPatients.length === 0) {
+    return (
+      <div className="space-y-5">
+        <h1 className="text-2xl font-bold text-gray-900">Historial de mis pacientes</h1>
+        <EmptyState message="No tienes pacientes vinculados aún" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Historial de mis pacientes</h1>
@@ -400,9 +401,8 @@ function CaregiverHistorial() {
       {/* Patient selector */}
       <div>
         <p className="mb-2 text-xs font-medium text-gray-500">Seleccionar paciente</p>
-        {/* PLACEHOLDER: patients from GET /crises/patients */}
         <div className="flex flex-wrap gap-2">
-          {PLACEHOLDER_CLINICAL_PATIENTS.map((p) => {
+          {clinicalPatients.map((p) => {
             const isSelected = selectedPatientId === p.id;
             return (
               <button
@@ -528,7 +528,11 @@ function CaregiverHistorial() {
 
 // ─── Doctor view ───────────────────────────────────────────────────────────────
 
-function DoctorHistorial() {
+function DoctorHistorial({ linkedPatients }: { linkedPatients?: Array<{ id: number; patientId: number; linkType: string }> }) {
+  const clinicalPatients = (linkedPatients ?? []).map((lp) => ({
+    id: String(lp.id),
+    name: `Paciente ${lp.patientId}`,
+  }));
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [openEventIds, setOpenEventIds] = useState<Set<string>>(new Set());
 
@@ -548,6 +552,15 @@ function DoctorHistorial() {
   // PLACEHOLDER: events from GET /crises/patients/{patientId}/analysis
   const events = PLACEHOLDER_CRISIS_EVENTS;
 
+  if (clinicalPatients.length === 0) {
+    return (
+      <div className="space-y-5">
+        <h1 className="text-2xl font-bold text-gray-900">Historial clínico</h1>
+        <EmptyState message="No tienes pacientes vinculados aún" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Historial clínico</h1>
@@ -555,9 +568,8 @@ function DoctorHistorial() {
       {/* Patient selector */}
       <div>
         <p className="mb-2 text-xs font-medium text-gray-500">Seleccionar paciente</p>
-        {/* PLACEHOLDER: patients from GET /doctor/patients */}
         <div className="flex flex-wrap gap-2">
-          {PLACEHOLDER_CLINICAL_PATIENTS.map((p) => {
+          {clinicalPatients.map((p) => {
             const isSelected = selectedPatientId === p.id;
             return (
               <button
@@ -687,14 +699,16 @@ export default function HistorialView({
   role,
   userToken,
   refreshKey,
+  linkedPatients,
 }: {
   role: HistorialRole;
   userToken?: string;
   refreshKey?: number;
+  linkedPatients?: Array<{ id: number; patientId: number; linkType: string }>;
 }) {
   if (role === "PATIENT" || role === "USER_PERSONAL")
     return <PatientHistorial userToken={userToken} refreshKey={refreshKey} />;
-  if (role === "CAREGIVER") return <CaregiverHistorial />;
-  if (role === "DOCTOR") return <DoctorHistorial />;
+  if (role === "CAREGIVER") return <CaregiverHistorial linkedPatients={linkedPatients} />;
+  if (role === "DOCTOR") return <DoctorHistorial linkedPatients={linkedPatients} />;
   return null;
 }

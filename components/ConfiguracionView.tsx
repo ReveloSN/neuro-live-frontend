@@ -14,13 +14,6 @@ const ROLE_LABELS: Record<ConfiguracionRole, string> = {
   DOCTOR: "Médico",
 };
 
-// PLACEHOLDER: patient list from GET /doctor/patients
-const PLACEHOLDER_PATIENTS = [
-  { id: "p1", name: "María González" },
-  { id: "p2", name: "Carlos Ruiz" },
-  { id: "p3", name: "Ana Martínez" },
-];
-
 const API_BASE = "https://neurolive-backend.azurewebsites.net";
 
 interface UserProfile {
@@ -43,20 +36,16 @@ const THRESH_RULES = {
   spo2Min: { min: 70,  max: 100 },
 } as const;
 
-function initialThresholds(): Record<string, ThresholdValues> {
-  return Object.fromEntries(
-    PLACEHOLDER_PATIENTS.map((p) => [p.id, { ...DEFAULT_THRESHOLDS }])
-  );
-}
-
 export default function ConfiguracionView({
   role,
   user,
   token,
+  linkedPatients,
 }: {
   role: ConfiguracionRole;
   user: { name: string; token: string };
   token: string;
+  linkedPatients?: Array<{ id: number; patientId: number; linkType: string }>;
 }) {
   const router = useRouter();
   const { login } = useAuth();
@@ -75,8 +64,12 @@ export default function ConfiguracionView({
   const [consentMsg, setConsentMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   // ── Clinical thresholds state (DOCTOR only) ────────────────────────────────
+  const clinicalPatients = (linkedPatients ?? []).map((lp) => ({
+    id: String(lp.id),
+    name: `Paciente ${lp.patientId}`,
+  }));
   const [threshPatientId, setThreshPatientId] = useState<string | null>(null);
-  const [thresholds, setThresholds] = useState<Record<string, ThresholdValues>>(initialThresholds);
+  const [thresholds, setThresholds] = useState<Record<string, ThresholdValues>>({});
   const [threshSaved, setThreshSaved] = useState(false);
 
   useEffect(() => {
@@ -101,12 +94,16 @@ export default function ConfiguracionView({
     fetchProfile();
   }, [token, user.name]);
 
-  // Load per-patient thresholds from localStorage on mount (DOCTOR only)
+  // Load per-patient thresholds from localStorage when linkedPatients changes (DOCTOR only)
   useEffect(() => {
     if (role !== "DOCTOR") return;
+    const patients = (linkedPatients ?? []).map((lp) => ({
+      id: String(lp.id),
+      name: `Paciente ${lp.patientId}`,
+    }));
     setThresholds((prev) => {
       const updated = { ...prev };
-      for (const p of PLACEHOLDER_PATIENTS) {
+      for (const p of patients) {
         try {
           const raw = localStorage.getItem(`nl_thresholds_${p.name}`);
           if (!raw) continue;
@@ -124,7 +121,7 @@ export default function ConfiguracionView({
       }
       return updated;
     });
-  }, [role]);
+  }, [role, linkedPatients]);
 
   async function handleSaveName() {
     const trimmed = nameValue.trim();
@@ -200,7 +197,7 @@ export default function ConfiguracionView({
 
   function handleSaveThresholds() {
     if (!threshPatientId) return;
-    const patient = PLACEHOLDER_PATIENTS.find((p) => p.id === threshPatientId);
+    const patient = clinicalPatients.find((p) => p.id === threshPatientId);
     const values = thresholds[threshPatientId] ?? DEFAULT_THRESHOLDS;
     if (patient) {
       try {
@@ -448,27 +445,32 @@ export default function ConfiguracionView({
           {/* Patient selector */}
           <div>
             <p className="mb-2 text-xs font-medium text-gray-500">Seleccionar paciente</p>
-            {/* PLACEHOLDER: patients from GET /doctor/patients */}
-            <div className="flex flex-wrap gap-2">
-              {PLACEHOLDER_PATIENTS.map((p) => {
-                const isSel = threshPatientId === p.id;
-                return (
-                  <button
-                    key={p.id}
-                    onClick={() => setThreshPatientId(isSel ? null : p.id)}
-                    aria-pressed={isSel}
-                    className="rounded-xl px-4 py-2 text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
-                    style={{
-                      backgroundColor: isSel ? "#D6E8F5" : "#ffffff",
-                      border: `1.5px solid ${isSel ? "#4A7FA5" : "#E5E7EB"}`,
-                      color: isSel ? "#2d5a7a" : "#374151",
-                    }}
-                  >
-                    {p.name}
-                  </button>
-                );
-              })}
-            </div>
+            {clinicalPatients.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                No tienes pacientes vinculados aún. Ve a Vinculación para conectarte.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {clinicalPatients.map((p) => {
+                  const isSel = threshPatientId === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => setThreshPatientId(isSel ? null : p.id)}
+                      aria-pressed={isSel}
+                      className="rounded-xl px-4 py-2 text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
+                      style={{
+                        backgroundColor: isSel ? "#D6E8F5" : "#ffffff",
+                        border: `1.5px solid ${isSel ? "#4A7FA5" : "#E5E7EB"}`,
+                        color: isSel ? "#2d5a7a" : "#374151",
+                      }}
+                    >
+                      {p.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Threshold inputs — rendered only when a patient is selected */}

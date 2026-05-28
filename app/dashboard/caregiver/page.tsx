@@ -5,68 +5,18 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import HistorialView from "@/components/HistorialView";
 import ConfiguracionView from "@/components/ConfiguracionView";
+import { useLinkedPatients } from "@/hooks/useLinkedPatients";
 
-// ---------------------------------------------------------------------------
-// PLACEHOLDER DATA — replace with GET /caregiver/patients
-// Each entry maps to a real patient returned by the API.
-// ---------------------------------------------------------------------------
 interface Patient {
   id: string;
   name: string;
   status: "Normal" | "Riesgo" | "Crisis";
-  // replace with GET /patients/{id}/biometric-data
   bpm: number;
   spo2: number;
   bpmSeries: number[];
   spo2Series: number[];
   alerts: { dot: string; label: string; time: string }[];
 }
-
-const PLACEHOLDER_PATIENTS: Patient[] = [
-  {
-    id: "p1",
-    name: "María González",
-    status: "Normal",
-    bpm: 74,
-    spo2: 98,
-    bpmSeries: [70, 72, 73, 71, 74, 76, 73, 75, 74, 72, 73, 75, 74, 73, 72, 74, 75, 73, 74, 74],
-    spo2Series: [98, 99, 98, 99, 98, 98, 99, 98, 99, 98, 98, 99, 98, 99, 98, 98, 99, 98, 98, 98],
-    alerts: [
-      { dot: "#22C55E", label: "Estado normalizado",          time: "hace 5 min" },
-      { dot: "#22C55E", label: "Sesión iniciada correctamente", time: "hace 20 min" },
-      { dot: "#22C55E", label: "BPM estable — 74",            time: "hace 35 min" },
-    ],
-  },
-  {
-    id: "p2",
-    name: "Carlos Ruiz",
-    status: "Riesgo",
-    bpm: 95,
-    spo2: 94,
-    bpmSeries: [78, 82, 85, 88, 91, 90, 93, 95, 94, 96, 95, 93, 94, 95, 96, 94, 95, 96, 95, 95],
-    spo2Series: [97, 96, 96, 95, 94, 94, 95, 94, 94, 93, 94, 95, 94, 94, 95, 94, 93, 94, 94, 94],
-    alerts: [
-      { dot: "#F59E0B", label: "Riesgo elevado — SpO2 94%",   time: "hace 3 min" },
-      { dot: "#F59E0B", label: "BPM en aumento — 95",         time: "hace 12 min" },
-      { dot: "#22C55E", label: "Estado normalizado",           time: "hace 40 min" },
-    ],
-  },
-  {
-    id: "p3",
-    name: "Ana Martínez",
-    status: "Crisis",
-    bpm: 112,
-    spo2: 91,
-    bpmSeries: [80, 85, 90, 95, 100, 104, 108, 110, 112, 111, 112, 113, 112, 114, 112, 113, 112, 111, 112, 112],
-    spo2Series: [96, 95, 94, 93, 92, 92, 91, 91, 90, 91, 91, 90, 91, 91, 90, 91, 91, 91, 91, 91],
-    alerts: [
-      { dot: "#EF4444", label: "Crisis detectada — BPM 112",  time: "hace 1 min" },
-      { dot: "#EF4444", label: "SpO2 crítico — 91%",          time: "hace 4 min" },
-      { dot: "#F59E0B", label: "Riesgo elevado — BPM 100",    time: "hace 9 min" },
-    ],
-  },
-];
-// ---------------------------------------------------------------------------
 
 const STATUS_STYLES: Record<string, { bg: string; color: string }> = {
   Normal: { bg: "#D1FAE5", color: "#065F46" },
@@ -143,53 +93,87 @@ function BiometricChart({
 
 // ── Patient list view ────────────────────────────────────────────────────────
 
-function PatientList({ onSelect }: { onSelect: (p: Patient) => void }) {
+function PatientList({
+  patients,
+  loading,
+  error,
+  onSelect,
+}: {
+  patients: Patient[];
+  loading: boolean;
+  error: string | null;
+  onSelect: (p: Patient) => void;
+}) {
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Mis Pacientes</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          {/* PLACEHOLDER count — replace with patients.length from GET /caregiver/patients */}
-          {PLACEHOLDER_PATIENTS.length} pacientes asignados
-        </p>
+        {!loading && !error && (
+          <p className="mt-1 text-sm text-gray-500">
+            {patients.length} pacientes asignados
+          </p>
+        )}
       </div>
 
-      {/* PLACEHOLDER list — replace with data from GET /caregiver/patients */}
-      <ul className="space-y-3">
-        {PLACEHOLDER_PATIENTS.map((patient) => (
-          <li
-            key={patient.id}
-            className="flex items-center gap-4 rounded-2xl px-5 py-4"
-            style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}
-          >
-            {/* Avatar */}
-            <div
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white select-none"
-              style={{ backgroundColor: "#4A7FA5" }}
-              aria-hidden="true"
-            >
-              {patient.name.charAt(0).toUpperCase()}
-            </div>
+      {loading && (
+        <div className="flex justify-center py-12">
+          <div
+            className="h-8 w-8 animate-spin rounded-full border-4"
+            style={{ borderColor: "#4A7FA5", borderTopColor: "transparent" }}
+            aria-label="Cargando pacientes"
+          />
+        </div>
+      )}
 
-            {/* Name + badge */}
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-gray-800 truncate">{patient.name}</p>
-              <div className="mt-1">
-                <StatusBadge status={patient.status} />
+      {!loading && error && (
+        <p className="rounded-xl px-5 py-4 text-sm text-red-600" style={{ backgroundColor: "#FEE2E2" }}>
+          {error}
+        </p>
+      )}
+
+      {!loading && !error && patients.length === 0 && (
+        <p className="rounded-xl px-5 py-6 text-center text-sm text-gray-500" style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}>
+          No tienes pacientes vinculados aún. Ve a la pestaña Vinculación para conectarte con un paciente.
+        </p>
+      )}
+
+      {!loading && !error && patients.length > 0 && (
+        <ul className="space-y-3">
+          {patients.map((patient) => (
+            <li
+              key={patient.id}
+              className="flex items-center gap-4 rounded-2xl px-5 py-4"
+              style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}
+            >
+              {/* Avatar */}
+              <div
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white select-none"
+                style={{ backgroundColor: "#4A7FA5" }}
+                aria-hidden="true"
+              >
+                {patient.name.charAt(0).toUpperCase()}
               </div>
-            </div>
 
-            {/* Action */}
-            <button
-              onClick={() => onSelect(patient)}
-              className="shrink-0 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
-              style={{ backgroundColor: "#4A7FA5" }}
-            >
-              Ver datos
-            </button>
-          </li>
-        ))}
-      </ul>
+              {/* Name + badge */}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-800 truncate">{patient.name}</p>
+                <div className="mt-1">
+                  <StatusBadge status={patient.status} />
+                </div>
+              </div>
+
+              {/* Action */}
+              <button
+                onClick={() => onSelect(patient)}
+                className="shrink-0 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
+                style={{ backgroundColor: "#4A7FA5" }}
+              >
+                Ver datos
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -410,6 +394,20 @@ export default function CaregiverDashboardPage() {
   const { user, loading, logout } = useAuth();
   const router = useRouter();
 
+  const { patients: linkedPatients, loading: patientsLoading, error: patientsError } =
+    useLinkedPatients(user?.token ?? "", user?.role ?? "");
+
+  const patients: Patient[] = linkedPatients.map((lp) => ({
+    id: String(lp.id),
+    name: `Paciente ${lp.patientId}`,
+    status: "Normal" as const,
+    bpm: 0,
+    spo2: 0,
+    bpmSeries: [0, 0],
+    spo2Series: [0, 0],
+    alerts: [],
+  }));
+
   const [activeTab, setActiveTab]           = useState<Tab>("Mis Pacientes");
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
 
@@ -531,12 +529,17 @@ export default function CaregiverDashboardPage() {
               onHistorial={() => handleTabChange("Historial")}
             />
           ) : (
-            <PatientList onSelect={handleSelectPatient} />
+            <PatientList
+              patients={patients}
+              loading={patientsLoading}
+              error={patientsError}
+              onSelect={handleSelectPatient}
+            />
           )
         )}
 
         {activeTab === "Historial" && (
-          <HistorialView role="CAREGIVER" />
+          <HistorialView role="CAREGIVER" linkedPatients={linkedPatients} />
         )}
 
         {activeTab === "Configuración" && (
