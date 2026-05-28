@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import SAMQuestionnaire from "@/components/SAMQuestionnaire";
 
 interface CalmModeProps {
   onExit: () => void;
   onSAMComplete?: (valence: number, arousal: number, dominance: number) => void;
+  userToken?: string;
 }
 
 type BreathPhase = "inhale" | "hold" | "exhale";
@@ -27,17 +28,23 @@ const PARTICLES = Array.from({ length: 18 }, (_, i) => ({
   amplitude: 30 + (i % 40),
 }));
 
-export default function CalmMode({ onExit, onSAMComplete }: CalmModeProps) {
+export default function CalmMode({ onExit, onSAMComplete, userToken }: CalmModeProps) {
   const [countdown, setCountdown] = useState(3);
   const [phase, setPhase] = useState<BreathPhase>("inhale");
   const [cycles, setCycles] = useState(0);
   const [showSAM, setShowSAM] = useState(false);
   const phaseRef = useRef<BreathPhase>("inhale");
   phaseRef.current = phase;
+  const breathingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  function handleExitClick() {
+  const handleExitClick = useCallback(() => {
+    // Stop the interval immediately so cycles stays at the value shown on screen
+    if (breathingIntervalRef.current !== null) {
+      clearInterval(breathingIntervalRef.current);
+      breathingIntervalRef.current = null;
+    }
     setShowSAM(true);
-  }
+  }, []);
 
   function handleSAMComplete(valence: number, arousal: number, dominance: number) {
     onSAMComplete?.(valence, arousal, dominance);
@@ -65,7 +72,8 @@ export default function CalmMode({ onExit, onSAMComplete }: CalmModeProps) {
       if (current === "exhale") setCycles((c) => c + 1);
       setPhase(next);
     }, PHASE_DURATION);
-    return () => clearInterval(tick);
+    breathingIntervalRef.current = tick;
+    return () => { clearInterval(tick); breathingIntervalRef.current = null; };
   }, [breathingActive]);
 
   const circleScale = phase === "inhale" ? "scale(1.55)" : phase === "hold" ? "scale(1.55)" : "scale(1)";
@@ -360,6 +368,8 @@ export default function CalmMode({ onExit, onSAMComplete }: CalmModeProps) {
         <SAMQuestionnaire
           onComplete={handleSAMComplete}
           onSkip={handleSAMSkip}
+          breathingCycles={cycles}
+          userToken={userToken}
         />
       )}
     </div>

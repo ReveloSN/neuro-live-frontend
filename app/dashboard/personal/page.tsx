@@ -77,6 +77,7 @@ export default function PersonalDashboardPage() {
   const [activeTab, setActiveTab] = useState<Tab>("Escritorio");
   const [sessionSeconds, setSessionSeconds] = useState(0); // PLACEHOLDER: session seconds synced with API
   const [calmModeActive, setCalmModeActive] = useState(false);
+  const [historialKey, setHistorialKey] = useState(0);
 
   function handleLogout() {
     logout();
@@ -116,7 +117,9 @@ export default function PersonalDashboardPage() {
           onSAMComplete={(valence, arousal, dominance) => {
             // TODO: POST /crises/{crisisId}/sam with { valence, arousal, dominance }
             console.log("[SAM] valence:", valence, "arousal:", arousal, "dominance:", dominance);
+            setHistorialKey((k) => k + 1);
           }}
+          userToken={user.token}
         />
       )}
 
@@ -168,7 +171,7 @@ export default function PersonalDashboardPage() {
 
         {activeTab === "Historial" && (
           <div className="mx-auto max-w-3xl">
-            <HistorialView role="USER_PERSONAL" />
+            <HistorialView role="USER_PERSONAL" userToken={user.token} refreshKey={historialKey} />
           </div>
         )}
 

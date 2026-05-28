@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export type HistorialRole = "PATIENT" | "USER_PERSONAL" | "CAREGIVER" | "DOCTOR";
 
@@ -28,20 +28,19 @@ const SAM_AROUSAL = [
   { score: 1, emoji: "😴", label: "Sin energía" },
   { score: 2, emoji: "😌", label: "Calmado" },
   { score: 3, emoji: "😐", label: "Neutral" },
-  { score: 4, emoji: "😃", label: "Activo" },
-  { score: 5, emoji: "🤩", label: "Muy activo" },
+  { score: 4, emoji: "⚡", label: "Activo" },
+  { score: 5, emoji: "🔥", label: "Muy activo" },
 ];
 
 const SAM_DOMINANCE = [
   { score: 1, emoji: "😰", label: "Sin control" },
   { score: 2, emoji: "😟", label: "Poco control" },
   { score: 3, emoji: "😐", label: "Normal" },
-  { score: 4, emoji: "😊", label: "Con control" },
-  { score: 5, emoji: "😎", label: "En paz" },
+  { score: 4, emoji: "💪", label: "Con control" },
+  { score: 5, emoji: "🧘", label: "En paz" },
 ];
 
-// ─── PLACEHOLDER data — PATIENT / USER_PERSONAL ───────────────────────────────
-// Replace with: GET /crises/patients/{patientId}
+// ─── Session record interfaces ─────────────────────────────────────────────────
 
 interface SessionRecord {
   id: string;
@@ -50,8 +49,25 @@ interface SessionRecord {
   status: SessionStatus;
   crisisDuration?: string;
   interventionType: string;
+  breathingCycles?: number;
   sam: { valence: number; arousal: number; dominance: number };
 }
+
+// Format saved to localStorage by SAMQuestionnaire
+interface LocalSavedSession {
+  id: string;
+  date: string;
+  duration: string;
+  breathingCycles: number;
+  valence: number;
+  arousal: number;
+  dominance: number;
+  interventionType: string;
+  status?: string;
+}
+
+// ─── PLACEHOLDER data — PATIENT / USER_PERSONAL ───────────────────────────────
+// Replace with: GET /crises/patients/{patientId}
 
 // PLACEHOLDER: sessions from GET /crises/patients/{patientId}
 const PLACEHOLDER_SESSIONS: SessionRecord[] = [
@@ -91,36 +107,8 @@ const PLACEHOLDER_SESSIONS: SessionRecord[] = [
   },
 ];
 
-// ─── PLACEHOLDER data — CAREGIVER ─────────────────────────────────────────────
+// ─── PLACEHOLDER data — CAREGIVER / DOCTOR ────────────────────────────────────
 // Replace with: GET /crises/patients/{patientId}
-
-type AlertType = "Crisis" | "Riesgo" | "Desconexión";
-
-const ALERT_CONFIG: Record<AlertType, { dot: string; bg: string; color: string }> = {
-  Crisis:      { dot: "#EF4444", bg: "#FEE2E2", color: "#991B1B" },
-  Riesgo:      { dot: "#F59E0B", bg: "#FEF3C7", color: "#92400E" },
-  Desconexión: { dot: "#6B7280", bg: "#F3F4F6", color: "#374151" },
-};
-
-interface AlertRecord {
-  id: string;
-  patientName: string;
-  date: string;
-  time: string;
-  alertType: AlertType;
-  resolved: boolean;
-}
-
-// PLACEHOLDER: alerts from GET /crises/patients/{patientId}
-const PLACEHOLDER_ALERTS: AlertRecord[] = [
-  { id: "a1", patientName: "Ana Martínez",    date: "24 may 2026", time: "14:32", alertType: "Crisis",      resolved: true  },
-  { id: "a2", patientName: "Carlos Ruiz",      date: "22 may 2026", time: "09:15", alertType: "Riesgo",      resolved: true  },
-  { id: "a3", patientName: "Ana Martínez",    date: "20 may 2026", time: "16:47", alertType: "Desconexión", resolved: false },
-  { id: "a4", patientName: "María González",  date: "18 may 2026", time: "11:20", alertType: "Riesgo",      resolved: true  },
-];
-
-// ─── PLACEHOLDER data — DOCTOR ────────────────────────────────────────────────
-// Replace with: GET /crises/patients/{patientId}/analysis
 
 interface ClinicalPatient {
   id: string;
@@ -143,7 +131,7 @@ interface CrisisEventRecord {
   arousal: number; // 1–5 SAM scale
 }
 
-// PLACEHOLDER: crisis events from GET /crises/patients/{patientId}/analysis
+// PLACEHOLDER: crisis events from GET /crises/patients/{patientId}
 const PLACEHOLDER_CRISIS_EVENTS: CrisisEventRecord[] = [
   { id: "e1", date: "24 may 2026", duration: "4 min 30 s", interventionType: "Respiración guiada", valence: 2, arousal: 5 },
   { id: "e2", date: "20 may 2026", duration: "2 min 15 s", interventionType: "Música ambiental",    valence: 3, arousal: 4 },
@@ -238,8 +226,35 @@ function EmptyState({ message }: { message: string }) {
 
 // ─── Patient / Personal view ───────────────────────────────────────────────────
 
-function PatientHistorial() {
+function PatientHistorial({ userToken, refreshKey }: { userToken?: string; refreshKey?: number }) {
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+  const [sessions, setSessions] = useState<SessionRecord[]>([]);
+
+  useEffect(() => {
+    if (!userToken) {
+      setSessions(PLACEHOLDER_SESSIONS);
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(`nl_historial_${userToken}`);
+      if (!raw) { setSessions([]); return; }
+      const saved: LocalSavedSession[] = JSON.parse(raw);
+      if (saved.length === 0) { setSessions([]); return; }
+      setSessions(
+        saved.slice().reverse().map((ls): SessionRecord => ({
+          id: ls.id,
+          date: ls.date,
+          duration: ls.duration,
+          status: (ls.status as SessionStatus | undefined) ?? "Normal",
+          interventionType: ls.interventionType,
+          breathingCycles: ls.breathingCycles,
+          sam: { valence: ls.valence, arousal: ls.arousal, dominance: ls.dominance },
+        }))
+      );
+    } catch {
+      setSessions([]);
+    }
+  }, [userToken, refreshKey]);
 
   function toggle(id: string) {
     setOpenIds((prev) => {
@@ -248,9 +263,6 @@ function PatientHistorial() {
       return next;
     });
   }
-
-  // PLACEHOLDER: sessions from GET /crises/patients/{patientId}
-  const sessions = PLACEHOLDER_SESSIONS;
 
   return (
     <div className="space-y-5">
@@ -271,7 +283,6 @@ function PatientHistorial() {
                 {/* Card header */}
                 <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
                   <div className="flex items-center gap-4">
-                    {/* Date + duration */}
                     <div>
                       <p className="text-sm font-semibold text-gray-800">{s.date}</p>
                       <p className="text-xs text-gray-400">{s.duration}</p>
@@ -280,7 +291,6 @@ function PatientHistorial() {
 
                   <div className="flex items-center gap-3">
                     <StatusBadge status={s.status} />
-                    {/* Expandable toggle */}
                     <button
                       onClick={() => toggle(s.id)}
                       className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
@@ -305,18 +315,25 @@ function PatientHistorial() {
                     {/* Crisis duration — only if applicable */}
                     {s.crisisDuration && (
                       <div className="flex items-center gap-2 pt-3">
-                        <span
-                          className="text-xs font-semibold"
-                          style={{ color: "#991B1B" }}
-                        >
+                        <span className="text-xs font-semibold" style={{ color: "#991B1B" }}>
                           Duración de la crisis:
                         </span>
                         <span className="text-xs text-gray-700">{s.crisisDuration}</span>
                       </div>
                     )}
 
+                    {/* Breathing cycles — only for Modo Calma sessions */}
+                    {typeof s.breathingCycles === "number" && (
+                      <div className={`flex items-center gap-2 ${!s.crisisDuration ? "pt-3" : ""}`}>
+                        <span className="text-xs font-semibold text-gray-500">
+                          Ciclos de respiración:
+                        </span>
+                        <span className="text-xs text-gray-700">{s.breathingCycles}</span>
+                      </div>
+                    )}
+
                     {/* Intervention type */}
-                    <div className={`flex items-center gap-2 ${!s.crisisDuration ? "pt-3" : ""}`}>
+                    <div className={`flex items-center gap-2 ${!s.crisisDuration && typeof s.breathingCycles !== "number" ? "pt-3" : ""}`}>
                       <span className="text-xs font-semibold text-gray-500">
                         Tipo de intervención:
                       </span>
@@ -357,63 +374,153 @@ function PatientHistorial() {
 // ─── Caregiver view ────────────────────────────────────────────────────────────
 
 function CaregiverHistorial() {
-  // PLACEHOLDER: alerts from GET /crises/patients/{patientId}
-  const alerts = PLACEHOLDER_ALERTS;
+  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+  const [openEventIds, setOpenEventIds] = useState<Set<string>>(new Set());
+
+  function toggleEvent(id: string) {
+    setOpenEventIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function handleExportCSV() {
+    // PLACEHOLDER: replace with GET /crises/patients/{patientId}?format=csv
+    console.log("[PLACEHOLDER] Exportar CSV — GET /crises/patients/{patientId}?format=csv");
+  }
+
+  // PLACEHOLDER: events from GET /crises/patients/{patientId}
+  const events = PLACEHOLDER_CRISIS_EVENTS;
 
   return (
-    <div className="space-y-5">
-      <h1 className="text-2xl font-bold text-gray-900">Historial de alertas</h1>
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold text-gray-900">Historial de mis pacientes</h1>
 
-      {alerts.length === 0 ? (
-        <EmptyState message="No hay alertas registradas" />
-      ) : (
-        <ul className="space-y-3">
-          {alerts.map((a) => {
-            const cfg = ALERT_CONFIG[a.alertType];
+      {/* Patient selector */}
+      <div>
+        <p className="mb-2 text-xs font-medium text-gray-500">Seleccionar paciente</p>
+        {/* PLACEHOLDER: patients from GET /crises/patients */}
+        <div className="flex flex-wrap gap-2">
+          {PLACEHOLDER_CLINICAL_PATIENTS.map((p) => {
+            const isSelected = selectedPatientId === p.id;
             return (
-              <li
-                key={a.id}
-                className="flex flex-wrap items-center justify-between gap-4 rounded-2xl px-5 py-4"
-                style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}
+              <button
+                key={p.id}
+                onClick={() => setSelectedPatientId(isSelected ? null : p.id)}
+                aria-pressed={isSelected}
+                className="rounded-xl px-4 py-2 text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
+                style={{
+                  backgroundColor: isSelected ? "#D6E8F5" : "#ffffff",
+                  border: `1.5px solid ${isSelected ? "#4A7FA5" : "#E5E7EB"}`,
+                  color: isSelected ? "#2d5a7a" : "#374151",
+                }}
               >
-                {/* Patient + date/time */}
-                <div>
-                  <p className="text-sm font-semibold text-gray-800">{a.patientName}</p>
-                  <p className="text-xs text-gray-400">
-                    {a.date} · {a.time}
-                  </p>
-                </div>
-
-                {/* Alert type + resolution */}
-                <div className="flex items-center gap-3">
-                  {/* Alert type badge with dot */}
-                  <span
-                    className="inline-flex items-center gap-1.5 rounded-full px-3 py-0.5 text-xs font-semibold"
-                    style={{ backgroundColor: cfg.bg, color: cfg.color }}
-                  >
-                    <span
-                      className="h-1.5 w-1.5 rounded-full"
-                      style={{ backgroundColor: cfg.dot }}
-                    />
-                    {a.alertType}
-                  </span>
-
-                  {/* Resolution badge */}
-                  <span
-                    className="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium"
-                    style={
-                      a.resolved
-                        ? { backgroundColor: "#D1FAE5", color: "#065F46" }
-                        : { backgroundColor: "#FEF3C7", color: "#92400E" }
-                    }
-                  >
-                    {a.resolved ? "Resuelta" : "Pendiente"}
-                  </span>
-                </div>
-              </li>
+                {p.name}
+              </button>
             );
           })}
-        </ul>
+        </div>
+      </div>
+
+      {selectedPatientId === null ? (
+        <EmptyState message="Selecciona un paciente para ver su historial" />
+      ) : events.length === 0 ? (
+        <EmptyState message="No hay eventos registrados para este paciente" />
+      ) : (
+        <>
+          {/* Crisis events */}
+          <ul className="space-y-3">
+            {events.map((ev) => {
+              const open = openEventIds.has(ev.id);
+              return (
+                <li
+                  key={ev.id}
+                  className="rounded-2xl overflow-hidden"
+                  style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}
+                >
+                  {/* Event summary row */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-semibold text-gray-800">{ev.date}</p>
+                      <p className="text-xs text-gray-400">
+                        Duración: {ev.duration} · {ev.interventionType}
+                      </p>
+                    </div>
+
+                    {/* SAM mini progress bars */}
+                    <div className="flex-1 min-w-[180px] max-w-[260px] space-y-1.5">
+                      {/* PLACEHOLDER: SAM scores from GET /crises/patients/{patientId} */}
+                      <SAMProgressBar label="Valencia"   value={ev.valence} color="#4A7FA5" />
+                      <SAMProgressBar label="Activación" value={ev.arousal} color="#F59E0B" />
+                    </div>
+
+                    <button
+                      onClick={() => toggleEvent(ev.id)}
+                      className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
+                      style={{
+                        backgroundColor: open ? "#D6E8F5" : "#F3F4F6",
+                        color: open ? "#2d5a7a" : "#6B7280",
+                      }}
+                      aria-expanded={open}
+                    >
+                      Ver detalles
+                      <ChevronIcon open={open} />
+                    </button>
+                  </div>
+
+                  {/* Expandable section */}
+                  {open && (
+                    <div
+                      className="px-5 pb-5 pt-3 space-y-3"
+                      style={{ borderTop: "1px solid #F3F4F6" }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-gray-500">
+                          Tipo de intervención:
+                        </span>
+                        <span
+                          className="rounded-full px-2.5 py-0.5 text-xs font-medium"
+                          style={{ backgroundColor: "#D6E8F5", color: "#2d5a7a" }}
+                        >
+                          {ev.interventionType}
+                        </span>
+                      </div>
+
+                      <div>
+                        <p className="mb-2 text-xs font-semibold text-gray-500">Escala SAM</p>
+                        <div className="flex gap-2">
+                          {/* PLACEHOLDER: SAM scores from GET /crises/patients/{patientId} */}
+                          <SAMCard label="Valencia"   options={SAM_VALENCE} score={ev.valence} />
+                          <SAMCard label="Activación" options={SAM_AROUSAL} score={ev.arousal} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+
+          {/* Export CSV button — visual only */}
+          <div className="flex justify-end">
+            {/* PLACEHOLDER: replace with GET /crises/patients/{patientId}?format=csv */}
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
+              style={{
+                backgroundColor: "#D6E8F5",
+                color: "#2d5a7a",
+                border: "1.5px solid #4A7FA5",
+              }}
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              Exportar CSV
+            </button>
+          </div>
+        </>
       )}
     </div>
   );
@@ -535,7 +642,6 @@ function DoctorHistorial() {
                         </span>
                       </div>
 
-                      {/* SAM detail with full scale */}
                       <div>
                         <p className="mb-2 text-xs font-semibold text-gray-500">Escala SAM</p>
                         <div className="flex gap-2">
@@ -577,8 +683,17 @@ function DoctorHistorial() {
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
-export default function HistorialView({ role }: { role: HistorialRole }) {
-  if (role === "PATIENT" || role === "USER_PERSONAL") return <PatientHistorial />;
+export default function HistorialView({
+  role,
+  userToken,
+  refreshKey,
+}: {
+  role: HistorialRole;
+  userToken?: string;
+  refreshKey?: number;
+}) {
+  if (role === "PATIENT" || role === "USER_PERSONAL")
+    return <PatientHistorial userToken={userToken} refreshKey={refreshKey} />;
   if (role === "CAREGIVER") return <CaregiverHistorial />;
   if (role === "DOCTOR") return <DoctorHistorial />;
   return null;

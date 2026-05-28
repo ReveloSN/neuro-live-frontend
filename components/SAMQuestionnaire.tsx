@@ -5,6 +5,8 @@ import { useState, useEffect } from "react";
 interface SAMQuestionnaireProps {
   onComplete: (valence: number, arousal: number, dominance: number) => void;
   onSkip: () => void;
+  userToken?: string;
+  breathingCycles?: number;
 }
 
 type Step = "intro" | 1 | 2 | 3;
@@ -132,7 +134,7 @@ const STEP_CONFIG = {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function SAMQuestionnaire({ onComplete, onSkip }: SAMQuestionnaireProps) {
+export default function SAMQuestionnaire({ onComplete, onSkip, userToken, breathingCycles }: SAMQuestionnaireProps) {
   const [step, setStep] = useState<Step>("intro");
   const [visible, setVisible] = useState(false);
   const [valence, setValence] = useState<number | null>(null);
@@ -157,7 +159,37 @@ export default function SAMQuestionnaire({ onComplete, onSkip }: SAMQuestionnair
     if (step === 1) { fadeToStep(2); return; }
     if (step === 2) { fadeToStep(3); return; }
     if (step === 3) {
-      onComplete(valence ?? 3, arousal ?? 3, dominance ?? 3);
+      const v = valence ?? 3;
+      const a = arousal ?? 3;
+      const d = dominance ?? 3;
+      if (userToken) {
+        try {
+          const storageKey = `nl_historial_${userToken}`;
+          const existing: unknown[] = JSON.parse(localStorage.getItem(storageKey) ?? "[]");
+          const now = new Date();
+          const months = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+          const dateStr = `${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
+          const status =
+            v <= 2 || a <= 2 || d <= 2 ? "Crisis" :
+            v === 3 || a === 3 || d === 3 ? "Riesgo" :
+            "Normal";
+          const newSession = {
+            id: `s_${Date.now()}`,
+            date: dateStr,
+            duration: "Modo Calma",
+            breathingCycles: breathingCycles ?? 0,
+            valence: v,
+            arousal: a,
+            dominance: d,
+            interventionType: "Modo Calma",
+            status,
+          };
+          localStorage.setItem(storageKey, JSON.stringify([...existing, newSession]));
+        } catch {
+          // localStorage unavailable or full — continue without saving
+        }
+      }
+      onComplete(v, a, d);
     }
   }
 
