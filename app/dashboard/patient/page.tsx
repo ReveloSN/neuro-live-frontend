@@ -41,7 +41,7 @@ function formatDuration(seconds: number): string {
 
 function MiniChart({ bpmData, spo2Data }: { bpmData: number[]; spo2Data: number[] }) {
   const W = 300;
-  const H = 72;
+  const H = 50;
   const PAD = { top: 6, right: 6, bottom: 6, left: 6 };
 
   const all = [...bpmData, ...spo2Data];
@@ -203,10 +203,10 @@ export default function PatientDashboardPage() {
 
         {/* ── Escritorio split layout ───────────────────────────────────────── */}
         {activeTab === "Escritorio" && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-5 gap-4">
 
         {/* ── Left: Text Editor ────────────────────────────────────────────── */}
-        <div className="lg:col-span-2 flex flex-col gap-3">
+        <div className="lg:col-span-3 flex flex-col gap-3">
 
           <WorkspaceEditor userId={user.token} />
 
@@ -235,7 +235,7 @@ export default function PatientDashboardPage() {
         </div>
 
         {/* ── Right: Metrics Panel ──────────────────────────────────────────── */}
-        <div className="lg:col-span-1 flex flex-col gap-4">
+        <div className="lg:col-span-2 flex flex-col gap-3">
 
           {/* Status badge — PLACEHOLDER: real-time status from biometric analysis */}
           <div className="flex justify-end">
@@ -250,7 +250,7 @@ export default function PatientDashboardPage() {
 
           {/* Real-time metrics card */}
           <div
-            className="rounded-2xl p-4"
+            className="rounded-2xl p-3"
             style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}
           >
             <h2 className="text-sm font-semibold text-gray-700">Métricas en tiempo real</h2>
@@ -259,14 +259,14 @@ export default function PatientDashboardPage() {
               <div>
                 <p className="text-xs text-gray-400 mb-0.5">BPM</p>
                 {/* PLACEHOLDER: real-time BPM from wearable */}
-                <p className="text-2xl font-bold" style={{ color: "#4A7FA5" }}>
+                <p className="text-xl font-bold" style={{ color: "#4A7FA5" }}>
                   {PLACEHOLDER_BPM}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-gray-400 mb-0.5">SpO2</p>
                 {/* PLACEHOLDER: real-time SpO2 from wearable */}
-                <p className="text-2xl font-bold" style={{ color: "#34D399" }}>
+                <p className="text-xl font-bold" style={{ color: "#34D399" }}>
                   {PLACEHOLDER_SPO2}<span className="text-sm font-normal">%</span>
                 </p>
               </div>
@@ -290,12 +290,12 @@ export default function PatientDashboardPage() {
 
           {/* Active session card */}
           <div
-            className="rounded-2xl p-4"
+            className="rounded-2xl p-3"
             style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}
           >
             <h2 className="text-sm font-semibold text-gray-700">Sesión activa</h2>
             {/* PLACEHOLDER: session timer synced with API */}
-            <p className="mt-2 text-3xl font-bold tabular-nums" style={{ color: "#4A7FA5" }}>
+            <p className="mt-2 text-xl font-bold tabular-nums" style={{ color: "#4A7FA5" }}>
               {formatDuration(sessionSeconds)}
             </p>
             {/* PLACEHOLDER: session goal from user settings */}
@@ -314,7 +314,7 @@ export default function PatientDashboardPage() {
 
           {/* Writing dynamics card */}
           <div
-            className="rounded-2xl p-4"
+            className="rounded-2xl p-3"
             style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}
           >
             <h2 className="text-sm font-semibold text-gray-700">Dinámicas de escritura</h2>
@@ -348,14 +348,14 @@ export default function PatientDashboardPage() {
           <button
             onClick={() => setCalmModeActive(true)}
             className="w-full rounded-xl px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2"
-            style={{ backgroundColor: "#4A7FA5" }}
+            style={{ background: "linear-gradient(135deg, #4A7FA5, #2d5a7a)", border: "2px solid #D6E8F5", boxShadow: "0 4px 15px rgba(74,127,165,0.5)", letterSpacing: "0.05em" }}
           >
-            Activar Modo Calma
+            🌿 Activar Modo Calma
           </button>
 
           {/* Zen tip card */}
           <div
-            className="rounded-2xl p-4"
+            className="rounded-2xl p-3"
             style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}
           >
             <div className="flex items-center gap-2 mb-2">

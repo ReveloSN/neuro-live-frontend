@@ -11,10 +11,6 @@ import ConfiguracionView from "@/components/ConfiguracionView";
 // ---------------------------------------------------------------------------
 // PLACEHOLDER DATA — replace with real API calls when backend is ready
 // ---------------------------------------------------------------------------
-const PLACEHOLDER_BPM = 74; // PLACEHOLDER: real-time BPM from wearable sensor
-const PLACEHOLDER_SPO2 = 98; // PLACEHOLDER: real-time SpO2 from wearable sensor
-const PLACEHOLDER_BPM_SERIES = [72, 75, 71, 74, 78, 76, 73, 77, 80, 78, 75, 72, 74, 76, 73, 71, 74, 77, 75, 73]; // PLACEHOLDER: streaming BPM data
-const PLACEHOLDER_SPO2_SERIES = [98, 97, 98, 99, 98, 97, 98, 98, 97, 98, 99, 98, 97, 98, 98, 99, 98, 97, 98, 98]; // PLACEHOLDER: streaming SpO2 data
 const PLACEHOLDER_DWELL_TIME_PCT = 68; // PLACEHOLDER: dwell time % from keystroke analysis
 const PLACEHOLDER_FLIGHT_TIME_PCT = 45; // PLACEHOLDER: flight time % from keystroke analysis
 const PLACEHOLDER_SESSION_GOAL_MIN = 45; // PLACEHOLDER: session goal minutes from user settings
@@ -30,39 +26,6 @@ function formatDuration(seconds: number): string {
   return `${h}:${m}:${s}`;
 }
 
-function MiniChart({ bpmData, spo2Data }: { bpmData: number[]; spo2Data: number[] }) {
-  const W = 300;
-  const H = 72;
-  const PAD = { top: 6, right: 6, bottom: 6, left: 6 };
-
-  const all = [...bpmData, ...spo2Data];
-  const min = Math.min(...all) - 4;
-  const max = Math.max(...all) + 4;
-
-  const toX = (i: number, len: number) =>
-    PAD.left + (i / (len - 1)) * (W - PAD.left - PAD.right);
-  const toY = (v: number) =>
-    PAD.top + (1 - (v - min) / (max - min)) * (H - PAD.top - PAD.bottom);
-
-  const bpmPath = bpmData
-    .map((v, i) => `${i === 0 ? "M" : "L"}${toX(i, bpmData.length).toFixed(1)},${toY(v).toFixed(1)}`)
-    .join(" ");
-  const spo2Path = spo2Data
-    .map((v, i) => `${i === 0 ? "M" : "L"}${toX(i, spo2Data.length).toFixed(1)},${toY(v).toFixed(1)}`)
-    .join(" ");
-
-  return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      className="w-full"
-      style={{ height: H }}
-      aria-label="Gráfico de métricas en tiempo real"
-    >
-      <path d={bpmPath} fill="none" stroke="#4A7FA5" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-      <path d={spo2Path} fill="none" stroke="#34D399" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
-  );
-}
 
 function ProgressBar({ value, color }: { value: number; color: string }) {
   return (
@@ -182,10 +145,10 @@ export default function PersonalDashboardPage() {
 
         {/* ── Escritorio split layout ───────────────────────────────────────── */}
         {activeTab === "Escritorio" && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-5 gap-4">
 
         {/* ── Left: Text Editor ────────────────────────────────────────────── */}
-        <div className="lg:col-span-2 flex flex-col gap-3">
+        <div className="lg:col-span-3 flex flex-col gap-3">
 
           <WorkspaceEditor userId={user.token} />
 
@@ -214,7 +177,7 @@ export default function PersonalDashboardPage() {
         </div>
 
         {/* ── Right: Metrics Panel ──────────────────────────────────────────── */}
-        <div className="lg:col-span-1 flex flex-col gap-4">
+        <div className="lg:col-span-2 flex flex-col gap-3">
 
           {/* Status badge — PLACEHOLDER: real-time status from biometric analysis */}
           <div className="flex justify-end">
@@ -227,54 +190,15 @@ export default function PersonalDashboardPage() {
             </span>
           </div>
 
-          {/* Real-time metrics card */}
-          <div
-            className="rounded-2xl p-4"
-            style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}
-          >
-            <h2 className="text-sm font-semibold text-gray-700">Métricas en tiempo real</h2>
-
-            <div className="mt-3 flex items-end gap-6">
-              <div>
-                <p className="text-xs text-gray-400 mb-0.5">BPM</p>
-                {/* PLACEHOLDER: real-time BPM from wearable */}
-                <p className="text-2xl font-bold" style={{ color: "#4A7FA5" }}>
-                  {PLACEHOLDER_BPM}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-400 mb-0.5">SpO2</p>
-                {/* PLACEHOLDER: real-time SpO2 from wearable */}
-                <p className="text-2xl font-bold" style={{ color: "#34D399" }}>
-                  {PLACEHOLDER_SPO2}<span className="text-sm font-normal">%</span>
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-3" style={{ borderTop: "1px solid #F9FAFB", paddingTop: "12px" }}>
-              {/* PLACEHOLDER: streaming BPM/SpO2 chart data */}
-              <MiniChart bpmData={PLACEHOLDER_BPM_SERIES} spo2Data={PLACEHOLDER_SPO2_SERIES} />
-              <div className="mt-2 flex gap-4 text-xs text-gray-400">
-                <span className="flex items-center gap-1.5">
-                  <span className="inline-block h-1.5 w-4 rounded-full" style={{ backgroundColor: "#4A7FA5" }} />
-                  BPM
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="inline-block h-1.5 w-4 rounded-full" style={{ backgroundColor: "#34D399" }} />
-                  SpO2
-                </span>
-              </div>
-            </div>
-          </div>
 
           {/* Active session card */}
           <div
-            className="rounded-2xl p-4"
+            className="rounded-2xl p-3"
             style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}
           >
             <h2 className="text-sm font-semibold text-gray-700">Sesión activa</h2>
             {/* PLACEHOLDER: session timer synced with API */}
-            <p className="mt-2 text-3xl font-bold tabular-nums" style={{ color: "#4A7FA5" }}>
+            <p className="mt-2 text-xl font-bold tabular-nums" style={{ color: "#4A7FA5" }}>
               {formatDuration(sessionSeconds)}
             </p>
             {/* PLACEHOLDER: session goal from user settings */}
@@ -293,7 +217,7 @@ export default function PersonalDashboardPage() {
 
           {/* Writing dynamics card */}
           <div
-            className="rounded-2xl p-4"
+            className="rounded-2xl p-3"
             style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}
           >
             <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -336,14 +260,14 @@ export default function PersonalDashboardPage() {
           <button
             onClick={() => setCalmModeActive(true)}
             className="w-full rounded-xl px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2"
-            style={{ backgroundColor: "#4A7FA5" }}
+            style={{ background: "linear-gradient(135deg, #4A7FA5, #2d5a7a)", border: "2px solid #D6E8F5", boxShadow: "0 4px 15px rgba(74,127,165,0.5)", letterSpacing: "0.05em" }}
           >
-            Activar Modo Calma
+            🌿 Activar Modo Calma
           </button>
 
           {/* Zen tip card */}
           <div
-            className="rounded-2xl p-4"
+            className="rounded-2xl p-3"
             style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}
           >
             <div className="flex items-center gap-2 mb-2">

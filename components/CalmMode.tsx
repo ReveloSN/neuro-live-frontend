@@ -89,9 +89,13 @@ export default function CalmMode({ onExit, onSAMComplete, userToken }: CalmModeP
       role="dialog"
       aria-modal="true"
       aria-label="Modo Calma"
+      className="calm-container"
       style={{
         position: "fixed",
-        inset: 0,
+        top: 0,
+        left: 0,
+        width: "100vw",
+        height: "100dvh",
         zIndex: 9999,
         backgroundColor: "rgba(0,0,0,0.85)",
         display: "flex",
@@ -133,6 +137,13 @@ export default function CalmMode({ onExit, onSAMComplete, userToken }: CalmModeP
           from { opacity: 0; }
           to   { opacity: 1; }
         }
+        @media (max-width: 640px) {
+          .calm-breathing-circle { width: 120px !important; height: 120px !important; }
+          .calm-container { padding: 16px !important; }
+          .calm-title { font-size: 18px !important; }
+          .calm-subtitle { font-size: 13px !important; }
+          .calm-exit-btn { position: fixed !important; bottom: 24px !important; left: 50% !important; transform: translateX(-50%) !important; }
+        }
       `}</style>
 
       {/* Ambient particles */}
@@ -170,6 +181,7 @@ export default function CalmMode({ onExit, onSAMComplete, userToken }: CalmModeP
           NeuroLive
         </p>
         <h1
+          className="calm-title"
           style={{
             fontSize: "clamp(20px, 4vw, 28px)",
             fontWeight: 700,
@@ -181,6 +193,7 @@ export default function CalmMode({ onExit, onSAMComplete, userToken }: CalmModeP
           Modo Calma activado
         </h1>
         <p
+          className="calm-subtitle"
           style={{
             marginTop: "8px",
             fontSize: "13px",
@@ -195,6 +208,7 @@ export default function CalmMode({ onExit, onSAMComplete, userToken }: CalmModeP
 
       {/* Center stage: countdown or breathing circle */}
       <div
+        className="calm-stage"
         style={{
           position: "relative",
           display: "flex",
@@ -256,6 +270,7 @@ export default function CalmMode({ onExit, onSAMComplete, userToken }: CalmModeP
             {/* Outer pulsing ring */}
             <div
               aria-hidden="true"
+              className="calm-circle-outer"
               style={{
                 position: "absolute",
                 inset: 0,
@@ -270,6 +285,7 @@ export default function CalmMode({ onExit, onSAMComplete, userToken }: CalmModeP
 
             {/* Main breathing circle */}
             <div
+              className="calm-breathing-circle"
               style={{
                 width: 140,
                 height: 140,
@@ -336,6 +352,7 @@ export default function CalmMode({ onExit, onSAMComplete, userToken }: CalmModeP
         {/* Exit button */}
         <button
           onClick={handleExitClick}
+          className="calm-exit-btn"
           style={{
             background: "transparent",
             border: "1px solid rgba(74,127,165,0.45)",

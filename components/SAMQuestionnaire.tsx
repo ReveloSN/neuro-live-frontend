@@ -207,6 +207,7 @@ export default function SAMQuestionnaire({ onComplete, onSkip, userToken, breath
       role="dialog"
       aria-modal="true"
       aria-label="Cuestionario SAM"
+      className="sam-overlay"
       style={{
         position: "fixed",
         inset: 0,
@@ -232,10 +233,19 @@ export default function SAMQuestionnaire({ onComplete, onSkip, userToken, breath
           background: #EFF6FF !important;
           transform: translateY(-2px);
         }
+        @media (max-width: 640px) {
+          .sam-overlay { padding: 0 !important; align-items: flex-start !important; }
+          .sam-card { border-radius: 0 !important; width: 100vw !important; min-height: 100dvh !important; margin: 0 !important; padding: 20px 16px 0 !important; }
+          .sam-options { display: flex !important; overflow-x: auto !important; gap: 8px !important; padding-bottom: 8px !important; justify-content: flex-start !important; scrollbar-width: none; -ms-overflow-style: none; }
+          .sam-options::-webkit-scrollbar { display: none; }
+          .sam-option { min-width: 75px !important; flex-shrink: 0 !important; }
+          .sam-buttons { position: sticky !important; bottom: 0 !important; background: #F5F0E8 !important; padding: 12px !important; margin-left: -16px !important; margin-right: -16px !important; }
+        }
       `}</style>
 
       {/* Card */}
       <div
+        className="sam-card"
         style={{
           backgroundColor: "#F5F0E8",
           borderRadius: "20px",
@@ -388,7 +398,7 @@ function QuestionStep({
       </p>
 
       {/* Options row */}
-      <div style={{ display: "flex", gap: "8px", justifyContent: "center", flexWrap: "nowrap" }}>
+      <div className="sam-options" style={{ display: "flex", gap: "8px", justifyContent: "center", flexWrap: "nowrap" }}>
         {options.map((opt) => (
           <OptionCard
             key={opt.value}
@@ -401,46 +411,47 @@ function QuestionStep({
         ))}
       </div>
 
-      {/* Next button */}
-      <button
-        onClick={onNext}
-        disabled={!canAdvance}
-        style={{
-          marginTop: "24px",
-          backgroundColor: canAdvance ? "#4A7FA5" : "#CBD5E1",
-          color: "white",
-          border: "none",
-          borderRadius: "12px",
-          padding: "12px 0",
-          fontSize: "15px",
-          fontWeight: 600,
-          cursor: canAdvance ? "pointer" : "not-allowed",
-          transition: "background-color 0.2s, opacity 0.15s",
-          display: "block",
-          width: "100%",
-        }}
-        onMouseEnter={(e) => { if (canAdvance) (e.currentTarget as HTMLButtonElement).style.opacity = "0.88"; }}
-        onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
-      >
-        {isLastStep ? "Finalizar" : "Siguiente"}
-      </button>
+      {/* Next + skip buttons — sticky on mobile */}
+      <div className="sam-buttons" style={{ marginTop: "24px" }}>
+        <button
+          onClick={onNext}
+          disabled={!canAdvance}
+          style={{
+            backgroundColor: canAdvance ? "#4A7FA5" : "#CBD5E1",
+            color: "white",
+            border: "none",
+            borderRadius: "12px",
+            padding: "12px 0",
+            fontSize: "15px",
+            fontWeight: 600,
+            cursor: canAdvance ? "pointer" : "not-allowed",
+            transition: "background-color 0.2s, opacity 0.15s",
+            display: "block",
+            width: "100%",
+          }}
+          onMouseEnter={(e) => { if (canAdvance) (e.currentTarget as HTMLButtonElement).style.opacity = "0.88"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
+        >
+          {isLastStep ? "Finalizar" : "Siguiente"}
+        </button>
 
-      <button
-        onClick={onSkip}
-        style={{
-          marginTop: "12px",
-          background: "none",
-          border: "none",
-          fontSize: "13px",
-          color: "#94A3B8",
-          cursor: "pointer",
-          textDecoration: "underline",
-          display: "block",
-          margin: "12px auto 0",
-        }}
-      >
-        Omitir
-      </button>
+        <button
+          onClick={onSkip}
+          style={{
+            marginTop: "12px",
+            background: "none",
+            border: "none",
+            fontSize: "13px",
+            color: "#94A3B8",
+            cursor: "pointer",
+            textDecoration: "underline",
+            display: "block",
+            margin: "12px auto 0",
+          }}
+        >
+          Omitir
+        </button>
+      </div>
     </>
   );
 }
@@ -461,7 +472,7 @@ function OptionCard({
   return (
     <button
       onClick={onClick}
-      className="sam-card-hover"
+      className="sam-card-hover sam-option"
       style={{
         flex: "1 1 0",
         minWidth: "90px",
