@@ -38,6 +38,21 @@ function formatDate(dateStr: string): string {
   }
 }
 
+function translateLinkType(linkType: string | null): string {
+  if (linkType === "CAREGIVER") return "Cuidador";
+  if (linkType === "DOCTOR") return "Médico";
+  if (linkType === "PATIENT") return "Paciente";
+  return linkType ?? "Vinculado";
+}
+
+function translateStatus(status: string): string {
+  if (status === "ACTIVE") return "Activo";
+  if (status === "PENDING") return "Pendiente";
+  if (status === "EXPIRED") return "Expirado";
+  if (status === "REVOKED") return "Revocado";
+  return status;
+}
+
 function StatusPill({ status }: { status: string }) {
   const s = status.toLowerCase();
   let bg = "#E5E7EB";
@@ -359,7 +374,7 @@ export default function LinkingPage() {
                     <div className="mt-4 space-y-1.5 text-xs" style={{ color: "#2d5a7a" }}>
                       <div className="flex items-center gap-2">
                         <span className="font-semibold">Estado:</span>
-                        <span className="capitalize">{generatedToken.status}</span>
+                        <span className="capitalize">{translateStatus(generatedToken.status)}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="font-semibold">Expira:</span>
@@ -399,7 +414,7 @@ export default function LinkingPage() {
                         className="py-3 flex items-center justify-between gap-4"
                       >
                         <div>
-                          <p className="text-sm font-medium text-gray-700">{link.linkType}</p>
+                          <p className="text-sm font-medium text-gray-700">{translateLinkType(link.linkType)}</p>
                           <p className="text-xs text-gray-400 mt-0.5">
                             Vinculado: {formatDate(link.createdAt)}
                             {link.expiresAt && (
@@ -407,7 +422,7 @@ export default function LinkingPage() {
                             )}
                           </p>
                         </div>
-                        <StatusPill status={link.status} />
+                        <StatusPill status={translateStatus(link.status)} />
                       </li>
                     ))}
                   </ul>
@@ -506,13 +521,13 @@ export default function LinkingPage() {
                             Paciente: {link.patientId}
                           </p>
                           <p className="text-xs text-gray-400 mt-0.5">
-                            {link.linkType} · Vinculado: {formatDate(link.createdAt)}
+                            {translateLinkType(link.linkType)} · Vinculado: {formatDate(link.createdAt)}
                             {link.expiresAt && (
                               <> · Expira: {formatDate(link.expiresAt)}</>
                             )}
                           </p>
                         </div>
-                        <StatusPill status={link.status} />
+                        <StatusPill status={translateStatus(link.status)} />
                       </li>
                     ))}
                   </ul>
