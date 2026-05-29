@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { getApiBaseUrl } from "@/lib/api";
 
 const API_BASE = getApiBaseUrl();
+const LINK_CODE_PATTERN = /[^ABCDEFGHJKLMNPQRSTUVWXYZ23456789]/g;
 
 interface LinkRecord {
   id: string;
@@ -52,6 +53,10 @@ function translateStatus(status: string): string {
   if (status === "EXPIRED") return "Expirado";
   if (status === "REVOKED") return "Revocado";
   return status;
+}
+
+function normalizeLinkCodeInput(value: string): string {
+  return value.toUpperCase().replace(LINK_CODE_PATTERN, "").slice(0, 6);
 }
 
 function StatusPill({ status }: { status: string }) {
@@ -167,14 +172,14 @@ export default function LinkingPage() {
       const data = (await res.json()) as GeneratedToken;
       setGeneratedToken(data);
     } catch {
-      setGenerateError("No se pudo generar el código. Intenta de nuevo.");
+      setGenerateError("No se pudo generar el token. Intenta de nuevo.");
     } finally {
       setGenerateLoading(false);
     }
   }
 
   async function handleRedeem() {
-    if (!user || redeemInput.trim().length < 8) return;
+    if (!user || redeemInput.trim().length < 6) return;
     setRedeemLoading(true);
     setRedeemError("");
     setRedeemSuccess(false);
@@ -188,9 +193,9 @@ export default function LinkingPage() {
         body: JSON.stringify({ token: redeemInput.trim() }),
       });
       if (!res.ok) {
-        if (res.status === 404) throw new Error("Código no encontrado o ya expirado.");
-        if (res.status === 409) throw new Error("Este código ya fue utilizado.");
-        throw new Error("No se pudo completar la vinculación. Verifica el código e intenta de nuevo.");
+        if (res.status === 404) throw new Error("Token no encontrado o ya expirado.");
+        if (res.status === 409) throw new Error("Este token ya fue utilizado.");
+        throw new Error("No se pudo completar la vinculación. Verifica el token e intenta de nuevo.");
       }
       setRedeemSuccess(true);
       setRedeemInput("");
@@ -314,10 +319,10 @@ export default function LinkingPage() {
                 style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}
               >
                 <h2 className="text-base font-semibold" style={{ color: "#1e3a4f" }}>
-                  Generar código de vinculación
+                  Generar token de vinculación
                 </h2>
                 <p className="mt-1 text-sm text-gray-500">
-                  Comparte este código con tu cuidador o médico
+                  Comparte este token con tu cuidador o médico
                 </p>
 
                 <button
@@ -326,7 +331,7 @@ export default function LinkingPage() {
                   className="mt-4 rounded-xl px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60"
                   style={{ backgroundColor: "#4A7FA5" }}
                 >
-                  {generateLoading ? "Generando..." : "Generar código"}
+                  {generateLoading ? "Generando..." : "Generar token"}
                 </button>
 
                 {generateError && (
@@ -344,7 +349,7 @@ export default function LinkingPage() {
                       className="text-xs font-semibold uppercase tracking-wide mb-3"
                       style={{ color: "#2d5a7a" }}
                     >
-                      Tu código de vinculación
+                      Tu token de vinculación
                     </p>
 
                     <div className="flex items-center gap-3">
@@ -366,7 +371,7 @@ export default function LinkingPage() {
                           backgroundColor: copied ? "#D1FAE5" : "#4A7FA5",
                           color: copied ? "#065F46" : "#ffffff",
                         }}
-                        aria-label="Copiar código"
+                        aria-label="Copiar token"
                       >
                         {copied ? "Copiado" : "Copiar"}
                       </button>
@@ -441,30 +446,26 @@ export default function LinkingPage() {
                 style={{ backgroundColor: "#ffffff", border: "1px solid #E5E7EB" }}
               >
                 <h2 className="text-base font-semibold" style={{ color: "#1e3a4f" }}>
-                  Ingresar código de vinculación
+                  Ingresar token de vinculación
                 </h2>
                 <p className="mt-1 text-sm text-gray-500">
-                  Ingresa el código que te proporcionó el paciente
+                  Ingresa el token que te proporcionó el paciente
                 </p>
 
                 <div className="mt-4 flex gap-3">
                   <input
                     type="text"
                     value={redeemInput}
-                    onChange={(e) =>
-                      setRedeemInput(
-                        e.target.value.replace(/[^a-zA-Z0-9]/g, "").slice(0, 32)
-                      )
-                    }
-                    placeholder="Código de 8–32 caracteres"
+                    onChange={(e) => setRedeemInput(normalizeLinkCodeInput(e.target.value))}
+                    placeholder="Token de 6 caracteres"
                     className="flex-1 rounded-xl px-4 py-2.5 text-sm font-mono tracking-widest placeholder:font-sans placeholder:tracking-normal border focus:outline-none focus:ring-2 focus:ring-blue-300"
                     style={{ borderColor: "#E5E7EB", color: "#1e3a4f" }}
-                    maxLength={32}
-                    aria-label="Código de vinculación"
+                    maxLength={6}
+                    aria-label="Token de vinculación"
                   />
                   <button
                     onClick={handleRedeem}
-                    disabled={redeemLoading || redeemInput.trim().length < 8}
+                    disabled={redeemLoading || redeemInput.trim().length < 6}
                     className="shrink-0 rounded-xl px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60"
                     style={{ backgroundColor: "#4A7FA5" }}
                   >
