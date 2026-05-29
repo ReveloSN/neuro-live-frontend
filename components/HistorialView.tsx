@@ -158,6 +158,15 @@ function formatBackendIntervention(value: string | null | undefined) {
   return value.replaceAll("_", " ").toLowerCase();
 }
 
+function translateInterventionType(type: string): string {
+  const t = type?.toLowerCase() ?? "";
+  if (t === "breathing") return "Modo Calma";
+  if (t === "audio") return "Modo Calma";
+  if (t === "light") return "Modo Calma";
+  if (t === "ui") return "Modo Calma";
+  return "Modo Calma";
+}
+
 function clampSam(value: number | null | undefined) {
   if (typeof value !== "number" || Number.isNaN(value)) return 3;
   return Math.min(5, Math.max(1, value));
@@ -516,7 +525,7 @@ function PatientHistorial({ userToken, refreshKey }: { userToken?: string; refre
                         className="rounded-full px-2.5 py-0.5 text-xs font-medium"
                         style={{ backgroundColor: "#D6E8F5", color: "#2d5a7a" }}
                       >
-                        {s.interventionType}
+                        {translateInterventionType(s.interventionType)}
                       </span>
                     </div>
 
@@ -635,7 +644,7 @@ function CaregiverHistorial({
                     <div className="space-y-0.5">
                       <p className="text-sm font-semibold text-gray-800">{ev.date}</p>
                       <p className="text-xs text-gray-400">
-                        Duración: {ev.duration} · {ev.interventionType}
+                        Duración: {ev.duration} · {translateInterventionType(ev.interventionType)}
                       </p>
                     </div>
 
@@ -674,7 +683,7 @@ function CaregiverHistorial({
                           className="rounded-full px-2.5 py-0.5 text-xs font-medium"
                           style={{ backgroundColor: "#D6E8F5", color: "#2d5a7a" }}
                         >
-                          {ev.interventionType}
+                          {translateInterventionType(ev.interventionType)}
                         </span>
                       </div>
 
@@ -806,7 +815,7 @@ function DoctorHistorial({
                     <div className="space-y-0.5">
                       <p className="text-sm font-semibold text-gray-800">{ev.date}</p>
                       <p className="text-xs text-gray-400">
-                        Duración: {ev.duration} · {ev.interventionType}
+                        Duración: {ev.duration} · {translateInterventionType(ev.interventionType)}
                       </p>
                     </div>
 
@@ -845,7 +854,7 @@ function DoctorHistorial({
                           className="rounded-full px-2.5 py-0.5 text-xs font-medium"
                           style={{ backgroundColor: "#D6E8F5", color: "#2d5a7a" }}
                         >
-                          {ev.interventionType}
+                          {translateInterventionType(ev.interventionType)}
                         </span>
                       </div>
 
