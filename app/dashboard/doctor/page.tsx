@@ -233,9 +233,14 @@ export default function DoctorDashboardPage() {
   const [patientsLoading, setPatientsLoading] = useState(false);
   const [patientsError, setPatientsError] = useState<string | null>(null);
 
-  // PLACEHOLDER date range — replace with a real date-range picker
-  const DATE_FROM = "01/03/2026";
-  const DATE_TO   = "30/03/2026";
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
+  });
+  const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [filteredCrisisEvents, setFilteredCrisisEvents] = useState<CrisisEvent[]>([]);
+  const [crisisEventsLoading, setCrisisEventsLoading] = useState(false);
 
   // Read-only thresholds for the selected patient — source of truth is localStorage
   const [patientThresholds, setPatientThresholds] = useState({ bpmMin: 60, bpmMax: 100, spo2Min: 95 });
@@ -369,6 +374,34 @@ export default function DoctorDashboardPage() {
     setPatientThresholds({ bpmMin: 60, bpmMax: 100, spo2Min: 95 });
   }, [selectedPatient]);
 
+  useEffect(() => {
+    if (!selectedPatient?.patientId || !user) {
+      setFilteredCrisisEvents([]);
+      return;
+    }
+    let active = true;
+    setCrisisEventsLoading(true);
+    getPatientCrises(
+      user.token,
+      selectedPatient.patientId,
+      50,
+      startDate + "T00:00:00",
+      endDate + "T23:59:59",
+    )
+      .then((page) => {
+        if (!active) return;
+        setFilteredCrisisEvents(mapCrisisEvents(page.content ?? []));
+      })
+      .catch(() => {
+        if (!active) return;
+        setFilteredCrisisEvents([]);
+      })
+      .finally(() => {
+        if (active) setCrisisEventsLoading(false);
+      });
+    return () => { active = false; };
+  }, [selectedPatient?.patientId, startDate, endDate, user]);
+
   if (loading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#F5F0E8" }}>
@@ -383,7 +416,7 @@ export default function DoctorDashboardPage() {
 
   const tabs: Tab[] = ["Mis Pacientes", "Historial", "Configuración"];
   const selectedEvents = selectedPatient?.fromBackend
-    ? selectedPatient.crisisEvents ?? []
+    ? filteredCrisisEvents
     : PLACEHOLDER_CRISIS_EVENTS;
 
   return (
@@ -506,15 +539,24 @@ export default function DoctorDashboardPage() {
               {/* Date range */}
               <div>
                 <p className="mb-2 text-xs font-medium text-gray-500">Rango de fechas</p>
-                {/* PLACEHOLDER date range — replace with a date-range picker */}
-                <div
-                  className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm text-gray-700"
-                  style={{ backgroundColor: "#ffffff", border: "1.5px solid #E5E7EB" }}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 9v7.5" />
-                  </svg>
-                  <span className="font-medium">{DATE_FROM} — {DATE_TO}</span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    style={{ backgroundColor: "#ffffff", border: "1.5px solid #E5E7EB" }}
+                    aria-label="Fecha de inicio"
+                  />
+                  <span className="text-sm text-gray-400">—</span>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    style={{ backgroundColor: "#ffffff", border: "1.5px solid #E5E7EB" }}
+                    aria-label="Fecha de fin"
+                  />
                 </div>
               </div>
             </div>
@@ -662,7 +704,11 @@ export default function DoctorDashboardPage() {
                         ) : (
                           <tr>
                             <td colSpan={6} className="px-5 py-6 text-center text-sm text-gray-400">
-                              No hay eventos de crisis para este paciente.
+                              {crisisEventsLoading
+                                ? "Cargando eventos..."
+                                : selectedPatient?.fromBackend
+                                  ? "No hay eventos en el rango de fechas seleccionado"
+                                  : "No hay eventos de crisis para este paciente."}
                             </td>
                           </tr>
                         )}

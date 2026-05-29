@@ -69,8 +69,17 @@ export function getPatientAnalysis(token: string, patientId: number) {
   return backendGet<ClinicalAnalysisResponse>(`/crises/patients/${patientId}/analysis`, token);
 }
 
-export function getPatientCrises(token: string, patientId: number, size = 10) {
-  return backendGet<PageResponse<CrisisEventResponse>>(`/crises/patients/${patientId}?page=0&size=${size}`, token);
+export function getPatientCrises(
+  token: string,
+  patientId: number,
+  size = 10,
+  startDate?: string,
+  endDate?: string,
+) {
+  let url = `/crises/patients/${patientId}?page=0&size=${size}`;
+  if (startDate) url += `&startDate=${encodeURIComponent(startDate)}`;
+  if (endDate) url += `&endDate=${encodeURIComponent(endDate)}`;
+  return backendGet<PageResponse<CrisisEventResponse>>(url, token);
 }
 
 export async function optionalBackendGet<T>(request: Promise<T>): Promise<T | null> {
