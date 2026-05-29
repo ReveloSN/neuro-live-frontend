@@ -73,6 +73,66 @@ export function getPatientCrises(token: string, patientId: number, size = 10) {
   return backendGet<PageResponse<CrisisEventResponse>>(`/crises/patients/${patientId}?page=0&size=${size}`, token);
 }
 
+export async function downloadPatientCrisesCsv(
+  token: string,
+  patientId: number,
+  options?: {
+    start?: string;
+    end?: string;
+  },
+): Promise<{ blob: Blob; filename: string }> {
+  const searchParams = new URLSearchParams();
+  if (options?.start) searchParams.set("start", options.start);
+  if (options?.end) searchParams.set("end", options.end);
+
+  const path = `/crises/patients/${patientId}/export${searchParams.size ? `?${searchParams.toString()}` : ""}`;
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
+    cache: "no-store",
+    headers: {
+      Accept: "text/csv",
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new NeuroLiveApiError(await readErrorMessage(response), response.status, path);
+  }
+
+  return {
+    blob: await response.blob(),
+    filename: extractFilenameFromContentDisposition(response.headers.get("Content-Disposition"))
+      ?? `crisis-events-${patientId}.csv`,
+  };
+}
+
+function extractFilenameFromContentDisposition(header: string | null): string | null {
+  if (!header) return null;
+
+  const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1].trim());
+    } catch {
+      return utf8Match[1].trim();
+    }
+  }
+
+  const filenameMatch = /filename="?([^";]+)"?/i.exec(header);
+  return filenameMatch?.[1]?.trim() || null;
+}
+
+export function triggerCsvDownload(blob: Blob, filename: string): void {
+  // Descarga el CSV generado por el backend sin exponer datos en la URL.
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
 export async function optionalBackendGet<T>(request: Promise<T>): Promise<T | null> {
   try {
     return await request;

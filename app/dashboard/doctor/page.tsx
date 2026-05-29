@@ -7,10 +7,12 @@ import HistorialView from "@/components/HistorialView";
 import ConfiguracionView from "@/components/ConfiguracionView";
 import {
   NeuroLiveApiError,
+  downloadPatientCrisesCsv,
   getLatestTelemetry,
   getMyLinks,
   getPatientCrises,
   optionalBackendGet,
+  triggerCsvDownload,
 } from "@/lib/clinical-api";
 import type { BiometricTelemetrySampleResponse, CrisisEventResponse } from "@/lib/types";
 
@@ -232,6 +234,8 @@ export default function DoctorDashboardPage() {
   const [linkedPatients, setLinkedPatients] = useState<LinkedPatient[]>([]);
   const [patientsLoading, setPatientsLoading] = useState(false);
   const [patientsError, setPatientsError] = useState<string | null>(null);
+  const [exportingCsv, setExportingCsv] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   // PLACEHOLDER date range — replace with a real date-range picker
   const DATE_FROM = "01/03/2026";
@@ -248,11 +252,26 @@ export default function DoctorDashboardPage() {
   function handleTabChange(tab: Tab) {
     setActiveTab(tab);
     if (tab !== "Mis Pacientes") setSelectedPatient(null);
+    setExportError(null);
   }
 
-  function handleExportCSV() {
-    // PLACEHOLDER: replace with GET /patients/{id}/export?format=csv&from=&to=
-    console.log("Exportar CSV — PLACEHOLDER");
+  async function handleExportCSV() {
+    // Descarga el CSV real del paciente seleccionado desde el backend.
+    if (!selectedPatient?.patientId || !selectedPatient.fromBackend || !user?.token) {
+      setExportError("La exportacion requiere datos reales del backend.");
+      return;
+    }
+
+    setExportingCsv(true);
+    setExportError(null);
+    try {
+      const { blob, filename } = await downloadPatientCrisesCsv(user.token, selectedPatient.patientId);
+      triggerCsvDownload(blob, filename);
+    } catch {
+      setExportError("No se pudo exportar el CSV.");
+    } finally {
+      setExportingCsv(false);
+    }
   }
 
   useEffect(() => {
@@ -467,7 +486,10 @@ export default function DoctorDashboardPage() {
                     return (
                       <button
                         key={p.id}
-                        onClick={() => setSelectedPatient(isSelected ? null : p)}
+                        onClick={() => {
+                          setSelectedPatient(isSelected ? null : p);
+                          setExportError(null);
+                        }}
                         aria-pressed={isSelected}
                         className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
                         style={{
@@ -673,22 +695,30 @@ export default function DoctorDashboardPage() {
 
                 {/* Export button */}
                 <div className="flex justify-end">
-                  {/* PLACEHOLDER action — replace with GET /patients/{id}/export?format=csv&from=&to= */}
                   <button
                     onClick={handleExportCSV}
+                    disabled={exportingCsv || !selectedPatient.patientId || !selectedPatient.fromBackend}
+                    aria-busy={exportingCsv}
                     className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
                     style={{
                       backgroundColor: "#D6E8F5",
                       color: "#2d5a7a",
                       border: "1.5px solid #4A7FA5",
+                      cursor: exportingCsv || !selectedPatient.patientId || !selectedPatient.fromBackend ? "not-allowed" : "pointer",
+                      opacity: exportingCsv || !selectedPatient.patientId || !selectedPatient.fromBackend ? 0.6 : 1,
                     }}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
                     </svg>
-                    Exportar datos CSV
+                    {exportingCsv ? "Exportando..." : "Exportar datos CSV"}
                   </button>
                 </div>
+                {exportError && (
+                  <p className="text-right text-xs font-medium" style={{ color: "#991B1B" }}>
+                    {exportError}
+                  </p>
+                )}
 
               </div>
             ) : (
