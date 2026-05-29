@@ -299,7 +299,7 @@ export default function DoctorDashboardPage() {
               return {
                 id: String(patientId),
                 patientId,
-                name: `Paciente #${patientId}`,
+                name: `Paciente ${patientId}`,
                 status: statusFromPatientData(latestTelemetry, crisisEvents),
                 evolutionDates: latestTelemetry ? realtimeDates() : [],
                 bpmSeries: buildRealtimeSeries(latestTelemetry?.bpm),
@@ -312,7 +312,7 @@ export default function DoctorDashboardPage() {
               return {
                 id: String(patientId),
                 patientId,
-                name: `Paciente #${patientId}`,
+                name: `Paciente ${patientId}`,
                 status: "Riesgo",
                 evolutionDates: [],
                 bpmSeries: [],
