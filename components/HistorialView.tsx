@@ -1,7 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getCurrentUserProfile, getMyLinks, getPatientCrises } from "@/lib/clinical-api";
+import {
+  downloadPatientCrisesCsv,
+  getCurrentUserProfile,
+  getMyLinks,
+  getPatientCrises,
+  triggerCsvDownload,
+} from "@/lib/clinical-api";
 import type { CrisisEventResponse } from "@/lib/types";
 
 export type HistorialRole = "PATIENT" | "USER_PERSONAL" | "CAREGIVER" | "DOCTOR";
@@ -557,6 +563,8 @@ function CaregiverHistorial({
 }) {
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [openEventIds, setOpenEventIds] = useState<Set<string>>(new Set());
+  const [exportingCsv, setExportingCsv] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const { patients, eventsByPatient, loading, error, usingBackend } = useClinicalHistory(userToken, linkedPatients);
 
   function toggleEvent(id: string) {
@@ -567,9 +575,27 @@ function CaregiverHistorial({
     });
   }
 
-  function handleExportCSV() {
-    // PLACEHOLDER: replace with GET /crises/patients/{patientId}?format=csv
-    console.log("[PLACEHOLDER] Exportar CSV — GET /crises/patients/{patientId}?format=csv");
+  async function handleExportCSV() {
+    // Descarga el CSV real del paciente seleccionado desde el backend.
+    if (!usingBackend) {
+      setExportError("La exportacion requiere datos reales del backend.");
+      return;
+    }
+    if (!userToken || !selectedPatientId) {
+      setExportError("Selecciona un paciente para exportar el CSV.");
+      return;
+    }
+
+    setExportingCsv(true);
+    setExportError(null);
+    try {
+      const { blob, filename } = await downloadPatientCrisesCsv(userToken, Number(selectedPatientId));
+      triggerCsvDownload(blob, filename);
+    } catch {
+      setExportError("No se pudo exportar el CSV.");
+    } finally {
+      setExportingCsv(false);
+    }
   }
 
   const events = selectedPatientId
@@ -577,6 +603,7 @@ function CaregiverHistorial({
       ? eventsByPatient[selectedPatientId] ?? []
       : PLACEHOLDER_CRISIS_EVENTS
     : [];
+  const canExportCsv = Boolean(userToken && selectedPatientId && usingBackend && !exportingCsv);
 
   return (
     <div className="space-y-6">
@@ -591,7 +618,10 @@ function CaregiverHistorial({
             return (
               <button
                 key={p.id}
-                onClick={() => setSelectedPatientId(isSelected ? null : p.id)}
+                onClick={() => {
+                  setSelectedPatientId(isSelected ? null : p.id);
+                  setExportError(null);
+                }}
                 aria-pressed={isSelected}
                 className="rounded-xl px-4 py-2 text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
                 style={{
@@ -693,23 +723,35 @@ function CaregiverHistorial({
             })}
           </ul>
 
-          {/* Export CSV button — visual only */}
-          <div className="flex justify-end">
-            {/* PLACEHOLDER: replace with GET /crises/patients/{patientId}?format=csv */}
+          <div className="flex flex-col items-end gap-2">
             <button
               onClick={handleExportCSV}
+              disabled={!canExportCsv}
+              aria-busy={exportingCsv}
               className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
               style={{
                 backgroundColor: "#D6E8F5",
                 color: "#2d5a7a",
                 border: "1.5px solid #4A7FA5",
+                cursor: canExportCsv ? "pointer" : "not-allowed",
+                opacity: canExportCsv ? 1 : 0.6,
               }}
             >
               <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
               </svg>
-              Exportar CSV
+              {exportingCsv ? "Exportando..." : "Exportar CSV"}
             </button>
+            {!usingBackend && (
+              <p className="text-xs font-medium" style={{ color: "#92400E" }}>
+                La exportacion requiere datos reales del backend.
+              </p>
+            )}
+            {exportError && (
+              <p className="text-xs font-medium" style={{ color: "#991B1B" }}>
+                {exportError}
+              </p>
+            )}
           </div>
         </>
       )}
@@ -728,6 +770,8 @@ function DoctorHistorial({
 }) {
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [openEventIds, setOpenEventIds] = useState<Set<string>>(new Set());
+  const [exportingCsv, setExportingCsv] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const { patients, eventsByPatient, loading, error, usingBackend } = useClinicalHistory(userToken, linkedPatients);
 
   function toggleEvent(id: string) {
@@ -738,9 +782,27 @@ function DoctorHistorial({
     });
   }
 
-  function handleExportCSV() {
-    // PLACEHOLDER: replace with GET /crises/patients/{patientId}/analysis?format=csv
-    console.log("[PLACEHOLDER] Exportar CSV — GET /crises/patients/{patientId}/analysis?format=csv");
+  async function handleExportCSV() {
+    // Descarga el CSV real del paciente seleccionado desde el backend.
+    if (!usingBackend) {
+      setExportError("La exportacion requiere datos reales del backend.");
+      return;
+    }
+    if (!userToken || !selectedPatientId) {
+      setExportError("Selecciona un paciente para exportar el CSV.");
+      return;
+    }
+
+    setExportingCsv(true);
+    setExportError(null);
+    try {
+      const { blob, filename } = await downloadPatientCrisesCsv(userToken, Number(selectedPatientId));
+      triggerCsvDownload(blob, filename);
+    } catch {
+      setExportError("No se pudo exportar el CSV.");
+    } finally {
+      setExportingCsv(false);
+    }
   }
 
   const events = selectedPatientId
@@ -748,6 +810,7 @@ function DoctorHistorial({
       ? eventsByPatient[selectedPatientId] ?? []
       : PLACEHOLDER_CRISIS_EVENTS
     : [];
+  const canExportCsv = Boolean(userToken && selectedPatientId && usingBackend && !exportingCsv);
 
   return (
     <div className="space-y-6">
@@ -762,7 +825,10 @@ function DoctorHistorial({
             return (
               <button
                 key={p.id}
-                onClick={() => setSelectedPatientId(isSelected ? null : p.id)}
+                onClick={() => {
+                  setSelectedPatientId(isSelected ? null : p.id);
+                  setExportError(null);
+                }}
                 aria-pressed={isSelected}
                 className="rounded-xl px-4 py-2 text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
                 style={{
@@ -864,23 +930,35 @@ function DoctorHistorial({
             })}
           </ul>
 
-          {/* Export CSV button — visual only */}
-          <div className="flex justify-end">
-            {/* PLACEHOLDER: replace with GET /crises/patients/{patientId}/analysis?format=csv */}
+          <div className="flex flex-col items-end gap-2">
             <button
               onClick={handleExportCSV}
+              disabled={!canExportCsv}
+              aria-busy={exportingCsv}
               className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
               style={{
                 backgroundColor: "#D6E8F5",
                 color: "#2d5a7a",
                 border: "1.5px solid #4A7FA5",
+                cursor: canExportCsv ? "pointer" : "not-allowed",
+                opacity: canExportCsv ? 1 : 0.6,
               }}
             >
               <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
               </svg>
-              Exportar CSV
+              {exportingCsv ? "Exportando..." : "Exportar CSV"}
             </button>
+            {!usingBackend && (
+              <p className="text-xs font-medium" style={{ color: "#92400E" }}>
+                La exportacion requiere datos reales del backend.
+              </p>
+            )}
+            {exportError && (
+              <p className="text-xs font-medium" style={{ color: "#991B1B" }}>
+                {exportError}
+              </p>
+            )}
           </div>
         </>
       )}
