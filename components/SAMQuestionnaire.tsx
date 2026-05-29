@@ -7,6 +7,7 @@ interface SAMQuestionnaireProps {
   onSkip: () => void;
   userToken?: string;
   breathingCycles?: number;
+  crisisId?: number;
 }
 
 type Step = "intro" | 1 | 2 | 3;
@@ -134,7 +135,7 @@ const STEP_CONFIG = {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function SAMQuestionnaire({ onComplete, onSkip, userToken, breathingCycles }: SAMQuestionnaireProps) {
+export default function SAMQuestionnaire({ onComplete, onSkip, userToken, breathingCycles, crisisId }: SAMQuestionnaireProps) {
   const [step, setStep] = useState<Step>("intro");
   const [visible, setVisible] = useState(false);
   const [valence, setValence] = useState<number | null>(null);
@@ -183,6 +184,7 @@ export default function SAMQuestionnaire({ onComplete, onSkip, userToken, breath
             dominance: d,
             interventionType: "Modo Calma",
             status,
+            ...(crisisId != null && { crisisId }),
           };
           localStorage.setItem(storageKey, JSON.stringify([...existing, newSession]));
         } catch {

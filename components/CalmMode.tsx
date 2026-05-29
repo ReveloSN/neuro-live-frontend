@@ -7,6 +7,7 @@ interface CalmModeProps {
   onExit: () => void;
   onSAMComplete?: (valence: number, arousal: number, dominance: number) => void;
   userToken?: string;
+  activeCrisisId?: number;
 }
 
 type BreathPhase = "inhale" | "hold" | "exhale";
@@ -28,7 +29,7 @@ const PARTICLES = Array.from({ length: 18 }, (_, i) => ({
   amplitude: 30 + (i % 40),
 }));
 
-export default function CalmMode({ onExit, onSAMComplete, userToken }: CalmModeProps) {
+export default function CalmMode({ onExit, onSAMComplete, userToken, activeCrisisId }: CalmModeProps) {
   const [countdown, setCountdown] = useState(3);
   const [phase, setPhase] = useState<BreathPhase>("inhale");
   const [cycles, setCycles] = useState(0);
@@ -387,6 +388,7 @@ export default function CalmMode({ onExit, onSAMComplete, userToken }: CalmModeP
           onSkip={handleSAMSkip}
           breathingCycles={cycles}
           userToken={userToken}
+          crisisId={activeCrisisId}
         />
       )}
     </div>

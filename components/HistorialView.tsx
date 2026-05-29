@@ -175,7 +175,7 @@ function mapBackendEvents(events: CrisisEventResponse[]): CrisisEventRecord[] {
 }
 
 function sessionStatusFromBackend(event: CrisisEventResponse): SessionStatus {
-  if (event.state === "ACTIVE_CRISIS" || event.emotionalState === "ACTIVE_CRISIS") return "Crisis";
+  if (event.state === "ACTIVE_CRISIS" || event.emotionalState === "ACTIVE_CRISIS" || event.endedAt === null) return "Crisis";
   if (event.state === "RISK_ELEVATED" || event.emotionalState === "RISK_ELEVATED") return "Riesgo";
   return "Normal";
 }

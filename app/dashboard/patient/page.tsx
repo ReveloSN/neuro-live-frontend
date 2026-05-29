@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import CalmMode from "@/components/CalmMode";
@@ -12,6 +12,7 @@ import {
   getCurrentUserProfile,
   getLatestTelemetry,
   getMyLinks,
+  getPatientCrises,
   getPatientDevices,
   optionalBackendGet,
 } from "@/lib/clinical-api";
@@ -134,6 +135,8 @@ export default function PatientDashboardPage() {
   const [activeTab, setActiveTab] = useState<Tab>("Escritorio");
   const [sessionSeconds, setSessionSeconds] = useState(0); // PLACEHOLDER: session seconds synced with API
   const [calmModeActive, setCalmModeActive] = useState(false);
+  const [activeCrisisId, setActiveCrisisId] = useState<number | null>(null);
+  const dismissedCrisisRef = useRef<number | null>(null);
   const [historialKey, setHistorialKey] = useState(0);
   const [patientId, setPatientId] = useState<number | undefined>(undefined);
   const [dwellTimePct, setDwellTimePct] = useState(0);
@@ -201,6 +204,44 @@ export default function PatientDashboardPage() {
     };
   }, [user]);
 
+  useEffect(() => {
+    if (!user || user.role !== "PATIENT" || !patientId) return;
+
+    let active = true;
+    let stopPolling = false;
+    const token = user.token;
+    const pid = patientId;
+
+    async function checkForActiveCrisis() {
+      if (stopPolling) return;
+      try {
+        const page = await getPatientCrises(token, pid, 6);
+        if (!active) return;
+        const activeCrisis = (page.content ?? []).find(
+          (c) => c.state === "ACTIVE_CRISIS" || c.emotionalState === "ACTIVE_CRISIS" || c.endedAt === null
+        );
+        if (activeCrisis && activeCrisis.id !== dismissedCrisisRef.current) {
+          setActiveCrisisId(activeCrisis.id);
+          setCalmModeActive(true);
+        }
+      } catch (error) {
+        if (!active) return;
+        if (error instanceof NeuroLiveApiError && error.status === 403) {
+          stopPolling = true;
+        }
+        // 404 → treat as empty; network errors → retry silently
+      }
+    }
+
+    void checkForActiveCrisis();
+    const id = window.setInterval(() => void checkForActiveCrisis(), 10000);
+
+    return () => {
+      active = false;
+      window.clearInterval(id);
+    };
+  }, [user, patientId]);
+
   if (loading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#F5F0E8" }}>
@@ -249,13 +290,17 @@ export default function PatientDashboardPage() {
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: "#F5F0E8" }}>
       {calmModeActive && (
         <CalmMode
-          onExit={() => setCalmModeActive(false)}
+          onExit={() => {
+            if (activeCrisisId !== null) dismissedCrisisRef.current = activeCrisisId;
+            setCalmModeActive(false);
+          }}
           onSAMComplete={(valence, arousal, dominance) => {
             // TODO: POST /crises/{crisisId}/sam with { valence, arousal, dominance }
             console.log("[SAM] valence:", valence, "arousal:", arousal, "dominance:", dominance);
             setHistorialKey((k) => k + 1);
           }}
           userToken={user.token}
+          activeCrisisId={activeCrisisId ?? undefined}
         />
       )}
 
